@@ -145,8 +145,8 @@ func orchestrate(ctx *Context) []string {
 			}
 		}
 		if len(parts) > 0 {
-			// 세퍼레이터 조인은 I1.2b에서 render.go가 생기면 교체
-			output = append(output, strings.Join(parts, " │ "))
+			sep := renderSeparator(ctx.Config.Separator, getTheme(ctx.Config.Theme))
+			output = append(output, strings.Join(parts, sep))
 		}
 	}
 	return output
