@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // --- model widget ---
@@ -105,10 +106,118 @@ func (w costWidget) Render(data any, ctx *Context) string {
 	return fmt.Sprintf("%s%s%s", theme.Accent, formatCost(cost), RESET)
 }
 
+// --- rateLimit5h widget ---
+
+type rateLimit5hWidget struct{}
+
+type rateLimitData struct {
+	Percent  int
+	ResetsAt time.Time
+}
+
+func (w rateLimit5hWidget) ID() string { return "rateLimit5h" }
+
+func (w rateLimit5hWidget) GetData(ctx *Context) (any, error) {
+	// 1. stdin priority
+	if ctx.Stdin.RateLimits != nil && ctx.Stdin.RateLimits.FiveHour != nil {
+		rl := ctx.Stdin.RateLimits.FiveHour
+		return &rateLimitData{
+			Percent:  clampPercent(float64(rl.UsedPercentage)),
+			ResetsAt: time.Unix(rl.ResetsAt, 0),
+		}, nil
+	}
+	// 2. API fallback
+	if ctx.RateLimits != nil && ctx.RateLimits.FiveHour != nil {
+		entry := ctx.RateLimits.FiveHour
+		return &rateLimitData{
+			Percent:  clampPercent(float64(entry.Utilization)),
+			ResetsAt: entry.ResetsAt,
+		}, nil
+	}
+	return nil, nil
+}
+
+func (w rateLimit5hWidget) Render(data any, ctx *Context) string {
+	return renderRateLimit(data, "5h", ctx)
+}
+
+// --- rateLimit7d widget ---
+
+type rateLimit7dWidget struct{}
+
+func (w rateLimit7dWidget) ID() string { return "rateLimit7d" }
+
+func (w rateLimit7dWidget) GetData(ctx *Context) (any, error) {
+	// 1. stdin priority
+	if ctx.Stdin.RateLimits != nil && ctx.Stdin.RateLimits.SevenDay != nil {
+		rl := ctx.Stdin.RateLimits.SevenDay
+		return &rateLimitData{
+			Percent:  clampPercent(float64(rl.UsedPercentage)),
+			ResetsAt: time.Unix(rl.ResetsAt, 0),
+		}, nil
+	}
+	// 2. API fallback
+	if ctx.RateLimits != nil && ctx.RateLimits.SevenDay != nil {
+		entry := ctx.RateLimits.SevenDay
+		return &rateLimitData{
+			Percent:  clampPercent(float64(entry.Utilization)),
+			ResetsAt: entry.ResetsAt,
+		}, nil
+	}
+	return nil, nil
+}
+
+func (w rateLimit7dWidget) Render(data any, ctx *Context) string {
+	return renderRateLimit(data, "7d", ctx)
+}
+
+// --- rateLimit7dSonnet widget ---
+
+type rateLimit7dSonnetWidget struct{}
+
+func (w rateLimit7dSonnetWidget) ID() string { return "rateLimit7dSonnet" }
+
+func (w rateLimit7dSonnetWidget) GetData(ctx *Context) (any, error) {
+	// API only (stdin doesn't have sonnet-specific data)
+	if ctx.RateLimits != nil && ctx.RateLimits.SevenDaySonnet != nil {
+		entry := ctx.RateLimits.SevenDaySonnet
+		return &rateLimitData{
+			Percent:  clampPercent(float64(entry.Utilization)),
+			ResetsAt: entry.ResetsAt,
+		}, nil
+	}
+	return nil, nil
+}
+
+func (w rateLimit7dSonnetWidget) Render(data any, ctx *Context) string {
+	return renderRateLimit(data, "7d-S", ctx)
+}
+
+// renderRateLimit is the shared render logic for all rate limit widgets.
+func renderRateLimit(data any, label string, ctx *Context) string {
+	d := data.(*rateLimitData)
+	theme := getTheme(ctx.Config.Theme)
+	color := getColorForPercent(d.Percent, theme)
+
+	result := fmt.Sprintf("%s%s: %s%d%%%s", theme.Secondary, label, color, d.Percent, RESET)
+
+	if !d.ResetsAt.IsZero() {
+		remaining := formatTimeRemaining(d.ResetsAt, time.Now())
+		if remaining != "0m" {
+			result += fmt.Sprintf(" %s(%s)%s", theme.Dim, remaining, RESET)
+		}
+	}
+
+	return result
+}
+
 // --- registration ---
 
 func init() {
 	registerWidget(modelWidget{})
 	registerWidget(contextWidget{})
 	registerWidget(costWidget{})
+	registerWidget(rateLimit5hWidget{})
+	registerWidget(rateLimit7dWidget{})
+	registerWidget(rateLimit7dSonnetWidget{})
 }
