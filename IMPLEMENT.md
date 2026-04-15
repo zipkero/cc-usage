@@ -247,7 +247,7 @@ configDir 추론:
 
 선행 조건: I1.1 (configDir 결정 로직).
 
-- [ ] 구현 완료
+- [x] 구현 완료
 
 **목적:** Claude API에서 rate limit 데이터를 가져오는 인증 + 캐싱 파이프라인. → PLAN: Phase 1 > T1.7
 

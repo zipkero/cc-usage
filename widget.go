@@ -8,7 +8,7 @@ type Context struct {
 	Config       Config
 	ConfigDir    string
 	Translations any // TODO: i18n 구현 시 타입 교체
-	RateLimits   any // TODO: API 연동 시 타입 교체
+	RateLimits   *UsageLimits
 }
 
 // Widget is the interface all widgets must implement.

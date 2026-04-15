@@ -47,10 +47,20 @@ func main() {
 	input := parseStdin()
 	debugLog("main", "stdin parsed: model=%s version=%s", input.Model.ID, input.Version)
 
+	// credential + API
+	token := getCredential(configDir)
+	debugLog("main", "credential: len=%d", len(token))
+
+	var rateLimits *UsageLimits
+	if token != "" {
+		rateLimits = fetchUsageLimits(token, cfg.Cache)
+	}
+
 	ctx := &Context{
-		Stdin:     input,
-		Config:    cfg,
-		ConfigDir: configDir,
+		Stdin:      input,
+		Config:     cfg,
+		ConfigDir:  configDir,
+		RateLimits: rateLimits,
 	}
 
 	lines := orchestrate(ctx)
