@@ -346,7 +346,7 @@ Render: `{label}: {color}{percent}%{reset}` + ` ({formatTimeRemaining})` (resets
 
 선행 조건: I1.2a (위젯 프레임워크).
 
-- [ ] 구현 완료
+- [x] 구현 완료
 
 **목적:** 현재 작업 디렉토리, git 상태를 표시. → PLAN: Phase 1 > T1.9
 
