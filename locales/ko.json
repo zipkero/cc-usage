@@ -1,0 +1,13 @@
+{
+  "model": { "opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku" },
+  "labels": { "fiveH": "5시간", "sevenD": "7일", "sevenDAll": "7일전체", "sevenDSonnet": "7일-S", "oneM": "1분" },
+  "time": { "days": "일", "hours": "시간", "minutes": "분", "seconds": "초" },
+  "errors": { "noContext": "컨텍스트 없음" },
+  "widgets": {
+    "tools": "도구", "done": "완료", "running": "실행중", "agent": "에이전트", "todos": "할일",
+    "claudeMd": "CLAUDE.md", "agentsMd": "에이전트", "addedDirs": "디렉토리", "rules": "규칙", "mcps": "MCP", "hooks": "훅",
+    "burnRate": "소비", "cache": "캐시", "toLimit": "제한까지", "forecast": "예측", "budget": "예산",
+    "performance": "성능", "tokenBreakdown": "토큰", "todayCost": "오늘",
+    "apiDuration": "API", "peakHours": "피크", "offPeak": "비피크"
+  }
+}

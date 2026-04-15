@@ -1,0 +1,13 @@
+{
+  "model": { "opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku" },
+  "labels": { "fiveH": "5h", "sevenD": "7d", "sevenDAll": "7d-all", "sevenDSonnet": "7d-S", "oneM": "1m" },
+  "time": { "days": "d", "hours": "h", "minutes": "m", "seconds": "s" },
+  "errors": { "noContext": "No context" },
+  "widgets": {
+    "tools": "Tools", "done": "done", "running": "running", "agent": "Agent", "todos": "Todos",
+    "claudeMd": "CLAUDE.md", "agentsMd": "Agents", "addedDirs": "Dirs", "rules": "Rules", "mcps": "MCPs", "hooks": "Hooks",
+    "burnRate": "Burn", "cache": "Cache", "toLimit": "To limit", "forecast": "Forecast", "budget": "Budget",
+    "performance": "Perf", "tokenBreakdown": "Tokens", "todayCost": "Today",
+    "apiDuration": "API", "peakHours": "Peak", "offPeak": "Off-Peak"
+  }
+}

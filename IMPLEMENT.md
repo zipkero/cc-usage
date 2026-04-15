@@ -384,7 +384,7 @@ git 명령 실행 디렉토리: `cmd.Dir = workspace.current_dir`
 
 선행 조건: I1.2 (Translations 구조체가 Context에 포함).
 
-- [ ] 구현 완료
+- [x] 구현 완료
 
 **목적:** 한국어/영어 라벨 전환. → PLAN: Phase 1 > T1.10
 

@@ -32,10 +32,10 @@ func formatCost(cost float64) string {
 	return fmt.Sprintf("$%.2f", cost)
 }
 
-func formatTimeRemaining(resetAt time.Time, now time.Time) string {
+func formatTimeRemaining(resetAt time.Time, now time.Time, t *Translations) string {
 	diff := resetAt.Sub(now)
 	if diff <= 0 {
-		return "0m"
+		return "0" + t.Time.Minutes
 	}
 	totalMinutes := int(diff.Minutes())
 	days := totalMinutes / (60 * 24)
@@ -43,12 +43,12 @@ func formatTimeRemaining(resetAt time.Time, now time.Time) string {
 	minutes := totalMinutes % 60
 
 	if days > 0 {
-		return fmt.Sprintf("%dd %dh", days, hours)
+		return fmt.Sprintf("%d%s %d%s", days, t.Time.Days, hours, t.Time.Hours)
 	}
 	if hours > 0 {
-		return fmt.Sprintf("%dh%dm", hours, minutes)
+		return fmt.Sprintf("%d%s%d%s", hours, t.Time.Hours, minutes, t.Time.Minutes)
 	}
-	return fmt.Sprintf("%dm", minutes)
+	return fmt.Sprintf("%d%s", minutes, t.Time.Minutes)
 }
 
 func formatDuration(ms int64) string {

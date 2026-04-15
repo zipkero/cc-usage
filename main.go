@@ -56,11 +56,15 @@ func main() {
 		rateLimits = fetchUsageLimits(token, cfg.Cache)
 	}
 
+	translations := loadTranslations(cfg.Language)
+	debugLog("main", "translations loaded: lang=%s", cfg.Language)
+
 	ctx := &Context{
-		Stdin:      input,
-		Config:     cfg,
-		ConfigDir:  configDir,
-		RateLimits: rateLimits,
+		Stdin:        input,
+		Config:       cfg,
+		ConfigDir:    configDir,
+		Translations: translations,
+		RateLimits:   rateLimits,
 	}
 
 	lines := orchestrate(ctx)

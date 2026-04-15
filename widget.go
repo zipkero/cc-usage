@@ -1,13 +1,106 @@
 package main
 
-import "strings"
+import (
+	_ "embed"
+	"encoding/json"
+	"os"
+	"strings"
+)
+
+//go:embed locales/en.json
+var localeEN []byte
+
+//go:embed locales/ko.json
+var localeKO []byte
+
+// Translations holds all translatable strings.
+type Translations struct {
+	Model struct {
+		Opus   string `json:"opus"`
+		Sonnet string `json:"sonnet"`
+		Haiku  string `json:"haiku"`
+	} `json:"model"`
+	Labels struct {
+		FiveH        string `json:"fiveH"`
+		SevenD       string `json:"sevenD"`
+		SevenDAll    string `json:"sevenDAll"`
+		SevenDSonnet string `json:"sevenDSonnet"`
+		OneM         string `json:"oneM"`
+	} `json:"labels"`
+	Time struct {
+		Days    string `json:"days"`
+		Hours   string `json:"hours"`
+		Minutes string `json:"minutes"`
+		Seconds string `json:"seconds"`
+	} `json:"time"`
+	Errors struct {
+		NoContext string `json:"noContext"`
+	} `json:"errors"`
+	Widgets struct {
+		Tools          string `json:"tools"`
+		Done           string `json:"done"`
+		Running        string `json:"running"`
+		Agent          string `json:"agent"`
+		Todos          string `json:"todos"`
+		ClaudeMd       string `json:"claudeMd"`
+		AgentsMd       string `json:"agentsMd"`
+		AddedDirs      string `json:"addedDirs"`
+		Rules          string `json:"rules"`
+		Mcps           string `json:"mcps"`
+		Hooks          string `json:"hooks"`
+		BurnRate       string `json:"burnRate"`
+		Cache          string `json:"cache"`
+		ToLimit        string `json:"toLimit"`
+		Forecast       string `json:"forecast"`
+		Budget         string `json:"budget"`
+		Performance    string `json:"performance"`
+		TokenBreakdown string `json:"tokenBreakdown"`
+		TodayCost      string `json:"todayCost"`
+		ApiDuration    string `json:"apiDuration"`
+		PeakHours      string `json:"peakHours"`
+		OffPeak        string `json:"offPeak"`
+	} `json:"widgets"`
+}
+
+// loadTranslations loads the appropriate locale based on language setting.
+func loadTranslations(lang string) *Translations {
+	if lang == "auto" {
+		lang = detectLanguage()
+	}
+
+	var data []byte
+	switch lang {
+	case "ko":
+		data = localeKO
+	default:
+		data = localeEN
+	}
+
+	var t Translations
+	if err := json.Unmarshal(data, &t); err != nil {
+		debugLog("i18n", "parse error: %v, falling back to en", err)
+		_ = json.Unmarshal(localeEN, &t)
+	}
+	return &t
+}
+
+// detectLanguage checks environment variables for locale hints.
+func detectLanguage() string {
+	for _, env := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
+		val := os.Getenv(env)
+		if strings.HasPrefix(val, "ko") {
+			return "ko"
+		}
+	}
+	return "en"
+}
 
 // Context holds all data needed by widgets.
 type Context struct {
 	Stdin        StdinInput
 	Config       Config
 	ConfigDir    string
-	Translations any // TODO: i18n 구현 시 타입 교체
+	Translations *Translations
 	RateLimits   *UsageLimits
 }
 

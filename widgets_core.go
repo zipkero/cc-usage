@@ -138,7 +138,7 @@ func (w rateLimit5hWidget) GetData(ctx *Context) (any, error) {
 }
 
 func (w rateLimit5hWidget) Render(data any, ctx *Context) string {
-	return renderRateLimit(data, "5h", ctx)
+	return renderRateLimit(data, ctx.Translations.Labels.FiveH, ctx)
 }
 
 // --- rateLimit7d widget ---
@@ -168,7 +168,7 @@ func (w rateLimit7dWidget) GetData(ctx *Context) (any, error) {
 }
 
 func (w rateLimit7dWidget) Render(data any, ctx *Context) string {
-	return renderRateLimit(data, "7d", ctx)
+	return renderRateLimit(data, ctx.Translations.Labels.SevenD, ctx)
 }
 
 // --- rateLimit7dSonnet widget ---
@@ -190,7 +190,7 @@ func (w rateLimit7dSonnetWidget) GetData(ctx *Context) (any, error) {
 }
 
 func (w rateLimit7dSonnetWidget) Render(data any, ctx *Context) string {
-	return renderRateLimit(data, "7d-S", ctx)
+	return renderRateLimit(data, ctx.Translations.Labels.SevenDSonnet, ctx)
 }
 
 // renderRateLimit is the shared render logic for all rate limit widgets.
@@ -202,8 +202,8 @@ func renderRateLimit(data any, label string, ctx *Context) string {
 	result := fmt.Sprintf("%s%s: %s%d%%%s", theme.Secondary, label, color, d.Percent, RESET)
 
 	if !d.ResetsAt.IsZero() {
-		remaining := formatTimeRemaining(d.ResetsAt, time.Now())
-		if remaining != "0m" {
+		remaining := formatTimeRemaining(d.ResetsAt, time.Now(), ctx.Translations)
+		if remaining != "0"+ctx.Translations.Time.Minutes {
 			result += fmt.Sprintf(" %s(%s)%s", theme.Dim, remaining, RESET)
 		}
 	}
