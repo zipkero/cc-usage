@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // debugLog prints debug messages to stderr when DEBUG=cc-usage or DEBUG=1.
@@ -46,10 +47,14 @@ func main() {
 	input := parseStdin()
 	debugLog("main", "stdin parsed: model=%s version=%s", input.Model.ID, input.Version)
 
-	// TODO: widget execution (I1.2)
+	ctx := &Context{
+		Stdin:     input,
+		Config:    cfg,
+		ConfigDir: configDir,
+	}
 
-	// Suppress unused variable warnings
-	_ = configDir
-	_ = cfg
-	_ = input
+	lines := orchestrate(ctx)
+	if len(lines) > 0 {
+		fmt.Print(strings.Join(lines, "\n"))
+	}
 }
