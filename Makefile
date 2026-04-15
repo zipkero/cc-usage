@@ -1,0 +1,21 @@
+BINARY := cc-usage
+VERSION := 0.1.0
+PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 windows/amd64
+
+.PHONY: build build-local test clean
+
+build:
+	@for p in $(PLATFORMS); do \
+		GOOS=$${p%/*} GOARCH=$${p#*/} \
+		go build -ldflags="-s -w -X main.version=$(VERSION)" \
+		-o dist/$(BINARY)-$${p%/*}-$${p#*/}$$([ "$${p%/*}" = "windows" ] && echo ".exe") .; \
+	done
+
+build-local:
+	go build -ldflags="-s -w -X main.version=$(VERSION)" -o dist/$(BINARY) .
+
+test:
+	go test ./...
+
+clean:
+	rm -rf dist/

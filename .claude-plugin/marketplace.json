@@ -1,0 +1,9 @@
+{
+  "title": "cc-usage",
+  "subtitle": "Status line plugin for Claude Code",
+  "author": "zipkero",
+  "license": "MIT",
+  "homepage": "https://github.com/zipkero/cc-usage",
+  "tags": ["status-line", "rate-limit", "usage", "monitoring"],
+  "platforms": ["darwin-arm64", "darwin-amd64", "linux-amd64", "windows-amd64"]
+}

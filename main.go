@@ -8,6 +8,9 @@ import (
 	"strings"
 )
 
+// version is set by ldflags at build time.
+var version = "dev"
+
 // debugLog prints debug messages to stderr when DEBUG=cc-usage or DEBUG=1.
 func debugLog(context string, format string, args ...any) {
 	dbg := os.Getenv("DEBUG")
