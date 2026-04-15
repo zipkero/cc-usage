@@ -444,7 +444,7 @@ git 명령 실행 디렉토리: `cmd.Dir = workspace.current_dir`
 
 선행 조건: I1.1~I1.8 전체.
 
-- [ ] 구현 완료
+- [x] 구현 완료
 
 **목적:** PLAN T1.12의 4가지 Exit Criteria 충족 확인. → PLAN: Phase 1 > T1.12
 
