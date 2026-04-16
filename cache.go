@@ -9,18 +9,22 @@ import (
 type SessionState struct {
 	CachedParts string `json:"cached_parts"`
 	WidgetCount int    `json:"widget_count"`
+	CurrentDir  string `json:"current_dir,omitempty"`
 }
 
-func sessionStatePath() string {
+func sessionStatePath(sessionID string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".cache", "cc-usage", "session-state.json")
+	if sessionID == "" {
+		return filepath.Join(home, ".cache", "cc-usage", "session-state.json")
+	}
+	return filepath.Join(home, ".cache", "cc-usage", "session-state-"+sessionID+".json")
 }
 
-func loadSessionState() *SessionState {
-	path := sessionStatePath()
+func loadSessionState(sessionID string) *SessionState {
+	path := sessionStatePath(sessionID)
 	if path == "" {
 		return nil
 	}
@@ -42,8 +46,8 @@ func loadSessionState() *SessionState {
 	return &state
 }
 
-func saveSessionState(state *SessionState) {
-	path := sessionStatePath()
+func saveSessionState(sessionID string, state *SessionState) {
+	path := sessionStatePath(sessionID)
 	if path == "" {
 		return
 	}

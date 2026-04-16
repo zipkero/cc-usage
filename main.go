@@ -63,7 +63,14 @@ func main() {
 	debugLog("main", "translations loaded: lang=%s", cfg.Language)
 
 	// Load cached session state
-	cached := loadSessionState()
+	sessionID := input.SessionId
+	cached := loadSessionState(sessionID)
+
+	// Restore current_dir from cache if stdin is empty
+	if input.Workspace.CurrentDir == "" && cached != nil && cached.CurrentDir != "" {
+		debugLog("main", "restoring current_dir from cache: %s", cached.CurrentDir)
+		input.Workspace.CurrentDir = cached.CurrentDir
+	}
 
 	ctx := &Context{
 		Stdin:        input,
@@ -100,9 +107,13 @@ func main() {
 
 	// Save non-projectInfo parts for degraded input detection
 	if result.WidgetCount >= 2 && len(result.Lines) > 0 {
-		saveSessionState(&SessionState{
+		state := &SessionState{
 			CachedParts: strings.Join(result.Lines, "\n"),
 			WidgetCount: result.WidgetCount,
-		})
+		}
+		if input.Workspace.CurrentDir != "" {
+			state.CurrentDir = input.Workspace.CurrentDir
+		}
+		saveSessionState(sessionID, state)
 	}
 }
