@@ -7,7 +7,10 @@
   "plugins": [
     {
       "name": "cc-usage",
-      "source": "./",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/zipkero/cc-usage.git"
+      },
       "description": "Claude Code status line plugin — shows model, context, cost, rate limits, and more",
       "category": "productivity"
     }
