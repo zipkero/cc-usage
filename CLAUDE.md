@@ -48,8 +48,8 @@ Go 기반 Claude Code status line plugin. stdin JSON → ANSI 텍스트 변환.
 
 ### 빌드
 ```bash
-make build-local  # 로컬 바이너리
-make build        # 크로스 컴파일 (darwin/arm64, darwin/amd64, linux/amd64, windows/amd64)
+make build-local  # 로컬 바이너리 (dist/)
+make build        # 크로스 컴파일 (bin/ — darwin/arm64, darwin/amd64, linux/amd64, windows/amd64)
 ```
 
 ### 테스트
@@ -59,6 +59,11 @@ echo '{"model":{"id":"claude-opus-4-6","display_name":"Opus"},"workspace":{"curr
 
 # 기대 출력: ◆ Opus │ ████░░░░ 30% 60K │ $1.25
 ```
+
+### 배포 구조
+- `bin/`: marketplace 배포용 pre-built 바이너리 (git tracked)
+- `dist/`: 로컬 개발용 바이너리 (git ignored)
+- `bin/run.sh`: OS 감지 후 올바른 바이너리를 실행하는 래퍼
 
 ### TODO 마커
 설계 문서 내 `> **TODO(...)**` 블록은 구현 시 판단이 필요한 항목. 해당 위젯 구현 전에 반드시 읽고 결정할 것.

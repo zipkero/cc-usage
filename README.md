@@ -31,10 +31,10 @@ Claude Code status line plugin. 모델, 컨텍스트 사용량, 비용, rate lim
 #### Build
 
 ```bash
-# 로컬 빌드
+# 로컬 빌드 (dist/)
 make build-local
 
-# 크로스 컴파일 (darwin/arm64, darwin/amd64, linux/amd64, windows/amd64)
+# 크로스 컴파일 (bin/ — darwin/arm64, darwin/amd64, linux/amd64, windows/amd64)
 make build
 ```
 
@@ -46,12 +46,21 @@ make build
 {
   "statusLine": {
     "type": "command",
-    "command": "/path/to/cc-usage"
+    "command": "/path/to/bin/run.sh"
   }
 }
 ```
 
-> **Windows**: 경로에 forward slash를 사용할 것. (`C:/Users/.../cc-usage.exe`)
+Windows에서 직접 바이너리를 지정할 경우:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "C:/path/to/bin/cc-usage-windows-amd64.exe"
+  }
+}
+```
 
 커스텀 프로필 사용 시:
 

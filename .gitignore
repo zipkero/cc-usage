@@ -9,6 +9,10 @@
 *.so
 *.dylib
 
+# Allow pre-built plugin binaries
+!bin/
+!bin/**
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -25,7 +29,7 @@ go.work.sum
 # env file
 .env
 
-dist
+dist/
 
 # ide
 .vscode

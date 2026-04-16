@@ -8,7 +8,7 @@ build:
 	@for p in $(PLATFORMS); do \
 		GOOS=$${p%/*} GOARCH=$${p#*/} \
 		go build -ldflags="-s -w -X main.version=$(VERSION)" \
-		-o dist/$(BINARY)-$${p%/*}-$${p#*/}$$([ "$${p%/*}" = "windows" ] && echo ".exe") .; \
+		-o bin/$(BINARY)-$${p%/*}-$${p#*/}$$([ "$${p%/*}" = "windows" ] && echo ".exe") .; \
 	done
 
 build-local:
@@ -18,4 +18,4 @@ test:
 	go test ./...
 
 clean:
-	rm -rf dist/
+	rm -rf bin/ dist/
