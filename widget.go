@@ -121,7 +121,7 @@ func registerWidget(w Widget) {
 // displayPresets defines built-in widget layouts.
 var displayPresets = map[string][][]string{
 	"compact": {
-		{"model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"},
+		{"projectInfo", "model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"},
 	},
 	"normal": {
 		{"model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"},

@@ -497,7 +497,7 @@ func debugLog(context, message string, args ...any)
 
 **MVP 출력 예시:**
 ```
-◆ Opus(H) │ ████░░░░ 30% 60K │ $1.25 │ 5h: 42% │ 7d: 69% │ 7d-S: 15%
+my-project (main) │ ◆ Opus(H) │ ████░░░░ 30% 60K │ $1.25 │ 5h: 42% │ 7d: 69% │ 7d-S: 15%
 ```
 
 **Rate limit 데이터 흐름 (중요):**
@@ -516,7 +516,7 @@ ROADMAP.md에 정의. CHECKLIST.md의 Phase 번호 매핑 참조.
 ```go
 var DisplayPresets = map[string][][]string{
     "compact": {
-        {"model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"},
+        {"projectInfo", "model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"},
     },
     "normal": {
         {"model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"},
@@ -629,11 +629,11 @@ go build -o dist/cc-usage .
 echo '{"model":{"id":"claude-opus-4-6","display_name":"Opus"},"workspace":{"current_dir":"/tmp"},"context_window":{"total_input_tokens":50000,"total_output_tokens":10000,"context_window_size":200000,"current_usage":{"input_tokens":50000,"output_tokens":10000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"cost":{"total_cost_usd":1.25}}' | ./dist/cc-usage
 
 # 기대 출력 (compact 모드):
-# ◆ Opus │ ████░░░░ 30% 60K │ $1.25
+# tmp │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25
 
 # rate limit 포함 테스트
 echo '{"model":{"id":"claude-opus-4-6","display_name":"Opus"},"workspace":{"current_dir":"/tmp"},"context_window":{"total_input_tokens":50000,"total_output_tokens":10000,"context_window_size":200000,"current_usage":{"input_tokens":50000,"output_tokens":10000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"cost":{"total_cost_usd":1.25},"rate_limits":{"five_hour":{"used_percentage":42,"resets_at":1700000000},"seven_day":{"used_percentage":69,"resets_at":1700500000}}}' | ./dist/cc-usage
 
 # 기대 출력:
-# ◆ Opus │ ████░░░░ 30% 60K │ $1.25 │ 5h: 42% │ 7d: 69%
+# tmp │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25 │ 5h: 42% │ 7d: 69%
 ```

@@ -57,7 +57,7 @@ make build        # 크로스 컴파일 (bin/ — darwin/arm64, darwin/amd64, li
 # 기본 동작 확인
 echo '{"model":{"id":"claude-opus-4-6","display_name":"Opus"},"workspace":{"current_dir":"/tmp"},"context_window":{"total_input_tokens":50000,"total_output_tokens":10000,"context_window_size":200000,"current_usage":{"input_tokens":50000,"output_tokens":10000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"cost":{"total_cost_usd":1.25}}' | ./dist/cc-usage
 
-# 기대 출력: ◆ Opus │ ████░░░░ 30% 60K │ $1.25
+# 기대 출력: tmp │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25
 ```
 
 ### 배포 구조
