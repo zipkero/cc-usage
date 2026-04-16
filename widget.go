@@ -198,7 +198,7 @@ func resolvePreset(config *Config) {
 }
 
 // orchestrate runs all widgets according to the display configuration.
-func orchestrate(ctx *Context) []string {
+func orchestrate(ctx *Context) ([]string, int) {
 	resolvePreset(&ctx.Config)
 
 	var lines [][]string
@@ -216,6 +216,7 @@ func orchestrate(ctx *Context) []string {
 		disabled[id] = true
 	}
 
+	totalParts := 0
 	var output []string
 	for _, line := range lines {
 		var parts []string
@@ -238,9 +239,10 @@ func orchestrate(ctx *Context) []string {
 			}
 		}
 		if len(parts) > 0 {
+			totalParts += len(parts)
 			sep := renderSeparator(ctx.Config.Separator, getTheme(ctx.Config.Theme))
 			output = append(output, strings.Join(parts, sep))
 		}
 	}
-	return output
+	return output, totalParts
 }
