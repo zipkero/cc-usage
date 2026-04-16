@@ -73,26 +73,36 @@ func main() {
 		RateLimits:   rateLimits,
 	}
 
-	lines, widgetCount := orchestrate(ctx)
+	result := orchestrate(ctx)
+	sep := renderSeparator(cfg.Separator, getTheme(cfg.Theme))
 
-	// Degraded input: fewer widgets than last valid render → use cached output
-	if cached != nil && cached.LastOutput != "" && widgetCount < cached.WidgetCount {
-		debugLog("main", "degraded input detected (widgets=%d, cached=%d), using cached output", widgetCount, cached.WidgetCount)
-		fmt.Print(cached.LastOutput)
-		return
+	// Degraded input: fewer widgets than last valid render → use cached parts
+	var partsOutput string
+	if cached != nil && cached.CachedParts != "" && result.WidgetCount < cached.WidgetCount {
+		debugLog("main", "degraded input detected (widgets=%d, cached=%d), using cached parts", result.WidgetCount, cached.WidgetCount)
+		partsOutput = cached.CachedParts
+	} else if len(result.Lines) > 0 {
+		partsOutput = strings.Join(result.Lines, "\n")
 	}
 
-	output := ""
-	if len(lines) > 0 {
-		output = strings.Join(lines, "\n")
-		fmt.Print(output)
+	// Combine: projectInfo (always fresh) + cached/current parts
+	if partsOutput != "" {
+		if result.HasProject {
+			// projectInfo goes first on the first line
+			firstLine := result.ProjectInfo + sep + partsOutput
+			fmt.Print(firstLine)
+		} else {
+			fmt.Print(partsOutput)
+		}
+	} else if result.HasProject {
+		fmt.Print(result.ProjectInfo)
 	}
 
-	// Save state for degraded input detection
-	if widgetCount >= 2 {
+	// Save non-projectInfo parts for degraded input detection
+	if result.WidgetCount >= 2 && len(result.Lines) > 0 {
 		saveSessionState(&SessionState{
-			LastOutput:  output,
-			WidgetCount: widgetCount,
+			CachedParts: strings.Join(result.Lines, "\n"),
+			WidgetCount: result.WidgetCount,
 		})
 	}
 }

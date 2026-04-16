@@ -89,8 +89,9 @@ func (w projectInfoWidget) Render(data any, ctx *Context) string {
 
 	var b strings.Builder
 
-	// dirname
-	b.WriteString(fmt.Sprintf("%s%s%s", theme.Folder, d.DirName, RESET))
+	// dirname (truncate long names)
+	dirName := truncate(d.DirName, 25)
+	b.WriteString(fmt.Sprintf("%s%s%s", theme.Folder, dirName, RESET))
 
 	// branch info
 	if d.Branch != "" {

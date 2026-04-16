@@ -7,7 +7,7 @@ import (
 )
 
 type SessionState struct {
-	LastOutput  string `json:"last_output"`
+	CachedParts string `json:"cached_parts"`
 	WidgetCount int    `json:"widget_count"`
 }
 
@@ -32,6 +32,11 @@ func loadSessionState() *SessionState {
 	var state SessionState
 	if err := json.Unmarshal(data, &state); err != nil {
 		debugLog("cache", "session state parse error: %v", err)
+		return nil
+	}
+	// Ignore legacy format (had last_output instead of cached_parts)
+	if state.CachedParts == "" {
+		debugLog("cache", "ignoring legacy cache format")
 		return nil
 	}
 	return &state

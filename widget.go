@@ -197,8 +197,16 @@ func resolvePreset(config *Config) {
 	config.DisplayMode = "custom"
 }
 
+// OrchestrateResult holds the result of widget orchestration.
+type OrchestrateResult struct {
+	ProjectInfo string   // projectInfo rendered separately (always fresh)
+	Lines       []string // rendered lines without projectInfo
+	WidgetCount int      // count of non-projectInfo widgets
+	HasProject  bool     // whether projectInfo was rendered
+}
+
 // orchestrate runs all widgets according to the display configuration.
-func orchestrate(ctx *Context) ([]string, int) {
+func orchestrate(ctx *Context) OrchestrateResult {
 	resolvePreset(&ctx.Config)
 
 	var lines [][]string
@@ -216,8 +224,9 @@ func orchestrate(ctx *Context) ([]string, int) {
 		disabled[id] = true
 	}
 
-	totalParts := 0
-	var output []string
+	result := OrchestrateResult{}
+	sep := renderSeparator(ctx.Config.Separator, getTheme(ctx.Config.Theme))
+
 	for _, line := range lines {
 		var parts []string
 		for _, widgetID := range line {
@@ -234,15 +243,20 @@ func orchestrate(ctx *Context) ([]string, int) {
 				continue
 			}
 			rendered := w.Render(data, ctx)
-			if rendered != "" {
+			if rendered == "" {
+				continue
+			}
+			if widgetID == "projectInfo" {
+				result.ProjectInfo = rendered
+				result.HasProject = true
+			} else {
 				parts = append(parts, rendered)
 			}
 		}
 		if len(parts) > 0 {
-			totalParts += len(parts)
-			sep := renderSeparator(ctx.Config.Separator, getTheme(ctx.Config.Theme))
-			output = append(output, strings.Join(parts, sep))
+			result.WidgetCount += len(parts)
+			result.Lines = append(result.Lines, strings.Join(parts, sep))
 		}
 	}
-	return output, totalParts
+	return result
 }
