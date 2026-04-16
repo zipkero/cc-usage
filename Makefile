@@ -10,6 +10,8 @@ build:
 		go build -ldflags="-s -w -X main.version=$(VERSION)" \
 		-o bin/$(BINARY)-$${p%/*}-$${p#*/}$$([ "$${p%/*}" = "windows" ] && echo ".exe") .; \
 	done
+	@chmod +x bin/run.sh bin/$(BINARY)-darwin-* bin/$(BINARY)-linux-*
+	@git update-index --chmod=+x bin/run.sh bin/$(BINARY)-darwin-* bin/$(BINARY)-linux-* 2>/dev/null || true
 
 build-local:
 	go build -ldflags="-s -w -X main.version=$(VERSION)" -o dist/$(BINARY) .
