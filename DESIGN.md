@@ -221,8 +221,9 @@ cc-usage/
 ├── .claude-plugin/
 │   ├── plugin.json          # 플러그인 매니페스트
 │   └── marketplace.json     # 마켓플레이스 메타데이터
-├── commands/
-│   └── setup.md             # /cc-usage:setup 커맨드
+├── skills/
+│   └── cc-usage-install/
+│       └── SKILL.md         # 설치 스킬
 ├── main.go                  # 엔트리포인트 (stdin→위젯→stdout)
 ├── stdin.go                 # StdinInput 구조체 + 파싱
 ├── config.go                # Config 구조체 + 로드 + 프리셋
@@ -614,7 +615,7 @@ clean:
 | 7 | `widgets_project.go` (projectInfo) | 프로젝트 정보 |
 | 8 | `locales/`, i18n 로직 | 다국어 지원 |
 | 9 | `Makefile` | 빌드 자동화 |
-| 10 | `.claude-plugin/`, `commands/` | 플러그인 매니페스트 + setup |
+| 10 | `.claude-plugin/`, `skills/` | 플러그인 매니페스트 + 설치 스킬 |
 
 ---
 

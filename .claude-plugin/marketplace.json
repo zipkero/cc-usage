@@ -1,9 +1,15 @@
 {
-  "title": "cc-usage",
-  "subtitle": "Status line plugin for Claude Code",
-  "author": "zipkero",
-  "license": "MIT",
-  "homepage": "https://github.com/zipkero/cc-usage",
-  "tags": ["status-line", "rate-limit", "usage", "monitoring"],
-  "platforms": ["darwin-arm64", "darwin-amd64", "linux-amd64", "windows-amd64"]
+  "name": "zipkero-cc-usage",
+  "description": "Claude Code status line plugin marketplace",
+  "owner": {
+    "name": "zipkero"
+  },
+  "plugins": [
+    {
+      "name": "cc-usage",
+      "source": "./",
+      "description": "Claude Code status line plugin — shows model, context, cost, rate limits, and more",
+      "category": "productivity"
+    }
+  ]
 }
