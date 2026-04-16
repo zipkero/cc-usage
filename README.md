@@ -17,50 +17,41 @@ Claude Code status line plugin. 모델, 컨텍스트 사용량, 비용, rate lim
 
 ## Installation
 
-### 1. Plugin Marketplace
+### Plugin Marketplace (권장)
 
 ```bash
+# 1. marketplace 등록
 /plugin marketplace add zipkero/cc-usage
+
+# 2. 플러그인 설치
 /plugin install cc-usage
+
+# 3. 적용
+/reload-plugins
 ```
 
-### 2. Manual
+### Manual
 
-바이너리를 다운로드하거나 직접 빌드한 뒤, Claude Code settings에 등록한다.
-
-#### Build
+소스를 클론하고 빌드한 뒤 settings에 직접 등록한다.
 
 ```bash
-# 로컬 빌드 (dist/)
-make build-local
-
-# 크로스 컴파일 (bin/ — darwin/arm64, darwin/amd64, linux/amd64, windows/amd64)
-make build
+git clone https://github.com/zipkero/cc-usage.git
+cd cc-usage
+make build-local   # dist/cc-usage 생성
 ```
 
-#### Register
-
-`~/.claude/settings.json`에 추가:
+`~/.claude/settings.json`:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "/path/to/bin/run.sh"
+    "command": "/path/to/dist/cc-usage"
   }
 }
 ```
 
-Windows에서 직접 바이너리를 지정할 경우:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "C:/path/to/bin/cc-usage-windows-amd64.exe"
-  }
-}
-```
+> **Windows**: 경로에 forward slash 사용. (`"command": "C:/Users/.../dist/cc-usage.exe"`)
 
 커스텀 프로필 사용 시:
 
@@ -68,7 +59,7 @@ Windows에서 직접 바이너리를 지정할 경우:
 {
   "statusLine": {
     "type": "command",
-    "command": "/path/to/cc-usage --config ~/.claude-triptopaz/cc-usage.json"
+    "command": "/path/to/dist/cc-usage --config ~/.claude-triptopaz/cc-usage.json"
   }
 }
 ```
