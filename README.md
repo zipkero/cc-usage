@@ -110,6 +110,21 @@ make build-local   # dist/cc-usage 생성
 
 `sessionDuration`, `burnRate`, `cacheHit`, `tokenSpeed`, `todoProgress`, `toolActivity`, `agentStatus`, `configCounts`, `performance`, `tokenBreakdown`, `forecast`, `budget`, `todayCost`, `linesChanged`, `outputStyle`, `version`, `peakHours` 등
 
+## Troubleshooting
+
+### 플러그인 업데이트 시 SSH 인증 오류 (Windows)
+
+```
+git@github.com: Permission denied (publickey).
+fatal: Could not read from remote repository.
+```
+
+플러그인 업데이트 과정에서 SSH URL로 clone을 시도하면서 발생할 수 있다. git 글로벌 설정으로 SSH를 HTTPS로 우회하면 해결된다.
+
+```bash
+git config --global url."https://github.com/".insteadOf "git@github.com:"
+```
+
 ## License
 
 MIT

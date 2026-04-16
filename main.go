@@ -65,17 +65,6 @@ func main() {
 	// Load cached session state
 	cached := loadSessionState()
 
-	// Detect session reset: model present but cost dropped → accumulate previous session
-	accumulatedCost := cachedAccumulatedCost(cached)
-	if cached != nil && input.Model.ID != "" && input.Cost.TotalCostUsd < cached.LastCost {
-		accumulatedCost += cached.LastCost
-		debugLog("main", "session reset detected: accumulated=%.2f + last=%.2f = %.2f",
-			cached.AccumulatedCost, cached.LastCost, accumulatedCost)
-	}
-
-	// Inject accumulated cost into stdin before orchestrate
-	input.Cost.TotalCostUsd += accumulatedCost
-
 	ctx := &Context{
 		Stdin:        input,
 		Config:       cfg,
@@ -99,13 +88,11 @@ func main() {
 		fmt.Print(output)
 	}
 
-	// Save state with raw stdin cost (before accumulation) for next reset detection
+	// Save state for degraded input detection
 	if widgetCount >= 2 {
 		saveSessionState(&SessionState{
-			LastCost:        input.Cost.TotalCostUsd - accumulatedCost,
-			LastOutput:      output,
-			WidgetCount:     widgetCount,
-			AccumulatedCost: accumulatedCost,
+			LastOutput:  output,
+			WidgetCount: widgetCount,
 		})
 	}
 }

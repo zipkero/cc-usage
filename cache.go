@@ -7,10 +7,8 @@ import (
 )
 
 type SessionState struct {
-	LastCost        float64 `json:"last_cost"`
-	LastOutput      string  `json:"last_output"`
-	WidgetCount     int     `json:"widget_count"`
-	AccumulatedCost float64 `json:"accumulated_cost"`
+	LastOutput  string `json:"last_output"`
+	WidgetCount int    `json:"widget_count"`
 }
 
 func sessionStatePath() string {
@@ -37,13 +35,6 @@ func loadSessionState() *SessionState {
 		return nil
 	}
 	return &state
-}
-
-func cachedAccumulatedCost(cached *SessionState) float64 {
-	if cached == nil {
-		return 0
-	}
-	return cached.AccumulatedCost
 }
 
 func saveSessionState(state *SessionState) {
