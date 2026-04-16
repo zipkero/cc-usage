@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "cc-usage",
-아니       "source": "./",
+      "source": "./",
       "description": "Claude Code status line plugin — shows model, context, cost, rate limits, and more",
       "category": "productivity"
     }
