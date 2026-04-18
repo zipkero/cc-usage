@@ -48,35 +48,43 @@ func (w projectInfoWidget) GetData(ctx *Context) (any, error) {
 		d.Worktree = ctx.Stdin.Worktree.Name
 	}
 
-	// git branch
+	// git branch + ahead/behind in a single call
 	if _, err := exec.LookPath("git"); err != nil {
 		return d, nil
 	}
 
-	gitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	gitCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	branchCmd := exec.CommandContext(gitCtx, "git", "rev-parse", "--abbrev-ref", "HEAD")
-	branchCmd.Dir = currentDir
-	if out, err := branchCmd.Output(); err == nil {
-		d.Branch = strings.TrimSpace(string(out))
-	}
-
-	if d.Branch == "" {
+	// porcelain=v2 --branch emits `# branch.head <name>` and (when upstream exists)
+	// `# branch.ab +<ahead> -<behind>` as the first lines. One fork instead of two.
+	statusCmd := exec.CommandContext(gitCtx, "git", "status", "--porcelain=v2", "--branch")
+	statusCmd.Dir = currentDir
+	out, err := statusCmd.Output()
+	if err != nil {
 		return d, nil
 	}
 
-	// ahead/behind
-	abCtx, abCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer abCancel()
-
-	abCmd := exec.CommandContext(abCtx, "git", "rev-list", "--count", "--left-right", "@{u}...HEAD")
-	abCmd.Dir = currentDir
-	if out, err := abCmd.Output(); err == nil {
-		parts := strings.Fields(strings.TrimSpace(string(out)))
-		if len(parts) == 2 {
-			fmt.Sscanf(parts[0], "%d", &d.Behind)
-			fmt.Sscanf(parts[1], "%d", &d.Ahead)
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.HasPrefix(line, "# branch.") {
+			if len(line) > 0 && line[0] != '#' {
+				break // header lines end; entry lines start
+			}
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "# branch.head "):
+			name := strings.TrimPrefix(line, "# branch.head ")
+			if name != "(detached)" {
+				d.Branch = name
+			}
+		case strings.HasPrefix(line, "# branch.ab "):
+			ab := strings.TrimPrefix(line, "# branch.ab ")
+			parts := strings.Fields(ab) // ["+<ahead>", "-<behind>"]
+			if len(parts) == 2 {
+				fmt.Sscanf(parts[0], "+%d", &d.Ahead)
+				fmt.Sscanf(parts[1], "-%d", &d.Behind)
+			}
 		}
 	}
 
