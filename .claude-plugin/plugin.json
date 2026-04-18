@@ -1,11 +1,11 @@
 {
-  "id": "cc-usage",
   "name": "cc-usage",
-  "description": "Claude Code status line plugin — shows model, context, cost, rate limits, and more",
-  "type": "statusLine",
   "version": "0.1.0",
-  "statusLine": {
-    "type": "command",
-    "command": "${CLAUDE_PLUGIN_ROOT}/bin/run.sh"
-  }
+  "description": "Claude Code status line plugin — shows model, context, cost, rate limits, and more",
+  "author": {
+    "name": "zipkero"
+  },
+  "repository": "https://github.com/zipkero/cc-usage",
+  "license": "MIT",
+  "keywords": ["statusline", "context", "cost", "usage", "rate-limit"]
 }
