@@ -4,12 +4,22 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 )
 
+// sessionStateTTL caps how long a cached SessionState is considered fresh.
+// Stale entries prevent cost/currentDir from freezing indefinitely when stdin
+// keeps arriving degraded or empty. RateLimit values are not subject to this
+// TTL because they are re-fetched from the account-global API cache each run.
+const sessionStateTTL = 300 * time.Second
+
 type SessionState struct {
-	CachedParts string `json:"cached_parts"`
-	WidgetCount int    `json:"widget_count"`
-	CurrentDir  string `json:"current_dir,omitempty"`
+	// CachedStdin is the last stdin payload that rendered at least two widgets.
+	// RateLimits is stripped before save so the account-global API cache always
+	// supplies fresh 5h/7d values on degrade re-render.
+	CachedStdin *StdinInput `json:"cached_stdin,omitempty"`
+	WidgetCount int         `json:"widget_count"`
+	SavedAt     int64       `json:"saved_at,omitempty"`
 }
 
 func sessionStatePath(sessionID string) string {
@@ -38,9 +48,12 @@ func loadSessionState(sessionID string) *SessionState {
 		debugLog("cache", "session state parse error: %v", err)
 		return nil
 	}
-	// Ignore legacy format (had last_output instead of cached_parts)
-	if state.CachedParts == "" {
+	if state.CachedStdin == nil {
 		debugLog("cache", "ignoring legacy cache format")
+		return nil
+	}
+	if state.SavedAt > 0 && time.Since(time.Unix(state.SavedAt, 0)) > sessionStateTTL {
+		debugLog("cache", "session state expired (age > %s)", sessionStateTTL)
 		return nil
 	}
 	return &state
@@ -56,6 +69,7 @@ func saveSessionState(sessionID string, state *SessionState) {
 		debugLog("cache", "session state dir create failed: %v", err)
 		return
 	}
+	state.SavedAt = time.Now().Unix()
 	data, err := json.Marshal(state)
 	if err != nil {
 		debugLog("cache", "session state marshal failed: %v", err)

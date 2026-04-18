@@ -66,12 +66,6 @@ func main() {
 	sessionID := input.SessionId
 	cached := loadSessionState(sessionID)
 
-	// Restore current_dir from cache if stdin is empty
-	if input.Workspace.CurrentDir == "" && cached != nil && cached.CurrentDir != "" {
-		debugLog("main", "restoring current_dir from cache: %s", cached.CurrentDir)
-		input.Workspace.CurrentDir = cached.CurrentDir
-	}
-
 	ctx := &Context{
 		Stdin:        input,
 		Config:       cfg,
@@ -81,23 +75,27 @@ func main() {
 	}
 
 	result := orchestrate(ctx)
+
+	// Degraded input: current stdin rendered fewer widgets than the last good
+	// render. Replay orchestrate with the cached stdin so rateLimit/cost come
+	// from fresh values (account-global API cache + cached stdin cost) instead
+	// of a frozen ANSI string.
+	if cached != nil && result.WidgetCount < cached.WidgetCount {
+		debugLog("main", "degraded input (widgets=%d, cached=%d), replaying with cached stdin", result.WidgetCount, cached.WidgetCount)
+		ctx.Stdin = *cached.CachedStdin
+		result = orchestrate(ctx)
+	}
+
 	sep := renderSeparator(cfg.Separator, getTheme(cfg.Theme))
 
-	// Degraded input: fewer widgets than last valid render → use cached parts
 	var partsOutput string
-	if cached != nil && cached.CachedParts != "" && result.WidgetCount < cached.WidgetCount {
-		debugLog("main", "degraded input detected (widgets=%d, cached=%d), using cached parts", result.WidgetCount, cached.WidgetCount)
-		partsOutput = cached.CachedParts
-	} else if len(result.Lines) > 0 {
+	if len(result.Lines) > 0 {
 		partsOutput = strings.Join(result.Lines, "\n")
 	}
 
-	// Combine: projectInfo (always fresh) + cached/current parts
 	if partsOutput != "" {
 		if result.HasProject {
-			// projectInfo goes first on the first line
-			firstLine := result.ProjectInfo + sep + partsOutput
-			fmt.Print(firstLine)
+			fmt.Print(result.ProjectInfo + sep + partsOutput)
 		} else {
 			fmt.Print(partsOutput)
 		}
@@ -105,15 +103,15 @@ func main() {
 		fmt.Print(result.ProjectInfo)
 	}
 
-	// Save non-projectInfo parts for degraded input detection
-	if result.WidgetCount >= 2 && len(result.Lines) > 0 {
-		state := &SessionState{
-			CachedParts: strings.Join(result.Lines, "\n"),
+	// Save stdin (not rendered strings) so a future degrade can re-render with
+	// fresh account-global values. Strip RateLimits: those must always come
+	// from the live API cache, never from stale session memory.
+	if result.WidgetCount >= 2 {
+		snapshot := ctx.Stdin
+		snapshot.RateLimits = nil
+		saveSessionState(sessionID, &SessionState{
+			CachedStdin: &snapshot,
 			WidgetCount: result.WidgetCount,
-		}
-		if input.Workspace.CurrentDir != "" {
-			state.CurrentDir = input.Workspace.CurrentDir
-		}
-		saveSessionState(sessionID, state)
+		})
 	}
 }
