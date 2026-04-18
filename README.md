@@ -128,6 +128,15 @@ fatal: Could not read from remote repository.
 git config --global url."https://github.com/".insteadOf "git@github.com:"
 ```
 
+## Privacy
+
+cc-usage는 외부 서버로 데이터를 전송하지 않는다.
+
+- **입력**: Claude Code가 stdin으로 넘겨주는 세션 정보(model, context, cost, workspace path 등)만 읽는다.
+- **네트워크**: OAuth 토큰(`~/.claude/.credentials.json`)으로 Anthropic 공식 API(`api.anthropic.com`)만 호출하여 rate limit을 조회한다. 제3자 서버나 애널리틱스는 사용하지 않는다.
+- **저장**: `~/.cache/cc-usage/`에 rate limit 응답과 세션 스냅샷을 로컬 캐시한다. 사용자가 직접 삭제할 수 있다.
+- **텔레메트리**: 없음.
+
 ## License
 
 MIT
