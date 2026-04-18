@@ -97,6 +97,9 @@ type costWidget struct{}
 func (w costWidget) ID() string { return "cost" }
 
 func (w costWidget) GetData(ctx *Context) (any, error) {
+	if ctx.Stdin.Cost.TotalCostUsd <= 0 {
+		return nil, nil
+	}
 	return ctx.Stdin.Cost.TotalCostUsd, nil
 }
 
