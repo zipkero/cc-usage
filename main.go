@@ -77,12 +77,17 @@ func main() {
 	result := orchestrate(ctx)
 
 	// Degraded input: current stdin rendered fewer widgets than the last good
-	// render. Replay orchestrate with the cached stdin so rateLimit/cost come
-	// from fresh values (account-global API cache + cached stdin cost) instead
-	// of a frozen ANSI string.
+	// render. Restore only the usage fields (cost, context) from cache — identity
+	// fields (workspace, worktree, model, session ids) must always reflect the
+	// live turn, otherwise projectInfo freezes on a stale cwd.
 	if cached != nil && result.WidgetCount < cached.WidgetCount {
-		debugLog("main", "degraded input (widgets=%d, cached=%d), replaying with cached stdin", result.WidgetCount, cached.WidgetCount)
-		ctx.Stdin = *cached.CachedStdin
+		debugLog("main", "degraded input (widgets=%d, cached=%d), restoring usage fields from cache", result.WidgetCount, cached.WidgetCount)
+		if ctx.Stdin.Cost.TotalCostUsd <= 0 {
+			ctx.Stdin.Cost = cached.CachedStdin.Cost
+		}
+		if ctx.Stdin.ContextWindow.TotalInputTokens+ctx.Stdin.ContextWindow.TotalOutputTokens == 0 {
+			ctx.Stdin.ContextWindow = cached.CachedStdin.ContextWindow
+		}
 		result = orchestrate(ctx)
 	}
 
