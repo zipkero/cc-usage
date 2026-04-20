@@ -13,6 +13,11 @@ import (
 // TTL because they are re-fetched from the account-global API cache each run.
 const sessionStateTTL = 300 * time.Second
 
+// workspaceRestoreTTL limits how recently cached workspace/worktree fields
+// can be restored on degrade. Shorter than sessionStateTTL because a stale
+// cwd is more user-visible than stale cost/context numbers.
+const workspaceRestoreTTL = 30 * time.Second
+
 type SessionState struct {
 	// CachedStdin is the last stdin payload that rendered at least two widgets.
 	// RateLimits is stripped before save so the account-global API cache always

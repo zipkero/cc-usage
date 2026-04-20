@@ -115,6 +115,12 @@ make build-local   # dist/cc-usage 생성
 
 ## Troubleshooting
 
+### Idle 시 `projectInfo`가 가끔 사라지는 경우
+
+Claude Code는 주기적으로 status line을 갱신하지 않고 이벤트 기반으로만 호출한다. Idle 상태에서 `workspace.current_dir`가 비어있는 stdin이 오면 `projectInfo` 위젯이 생략될 수 있다.
+
+이를 완화하기 위해 직전 렌더의 workspace/worktree를 로컬 세션 캐시(`~/.cache/cc-usage/session-state-*.json`)에서 복원한다. 단, **30초 이내**의 캐시만 사용한다 — 사용자가 `cd`로 디렉터리를 옮긴 뒤 긴 idle이 발생했을 때 이전 경로가 고착되는 것을 막기 위함이다. 30초를 초과한 idle에서는 복원하지 않고 위젯을 생략한다.
+
 ### 플러그인 업데이트 시 SSH 인증 오류 (Windows)
 
 ```

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // version is set by ldflags at build time.
@@ -77,18 +78,36 @@ func main() {
 	result := orchestrate(ctx)
 
 	// Degraded input: current stdin rendered fewer widgets than the last good
-	// render. Restore only the usage fields (cost, context) from cache — identity
-	// fields (workspace, worktree, model, session ids) must always reflect the
-	// live turn, otherwise projectInfo freezes on a stale cwd.
-	if cached != nil && result.WidgetCount < cached.WidgetCount {
-		debugLog("main", "degraded input (widgets=%d, cached=%d), restoring usage fields from cache", result.WidgetCount, cached.WidgetCount)
-		if ctx.Stdin.Cost.TotalCostUsd <= 0 {
-			ctx.Stdin.Cost = cached.CachedStdin.Cost
+	// render, or workspace.current_dir arrived empty while a recent cache still
+	// has it. Restore the minimum needed so widgets don't flicker away.
+	if cached != nil && cached.CachedStdin != nil {
+		workspaceStale := ctx.Stdin.Workspace.CurrentDir == "" && cached.CachedStdin.Workspace.CurrentDir != ""
+		usageDegraded := result.WidgetCount < cached.WidgetCount
+
+		restoreWorkspace := workspaceStale && cached.SavedAt > 0 &&
+			time.Since(time.Unix(cached.SavedAt, 0)) < workspaceRestoreTTL
+
+		if restoreWorkspace {
+			debugLog("main", "workspace empty, restoring from cache (age < %s)", workspaceRestoreTTL)
+			ctx.Stdin.Workspace = cached.CachedStdin.Workspace
+			if ctx.Stdin.Worktree == nil {
+				ctx.Stdin.Worktree = cached.CachedStdin.Worktree
+			}
 		}
-		if ctx.Stdin.ContextWindow.TotalInputTokens+ctx.Stdin.ContextWindow.TotalOutputTokens == 0 {
-			ctx.Stdin.ContextWindow = cached.CachedStdin.ContextWindow
+
+		if usageDegraded {
+			debugLog("main", "degraded input (widgets=%d, cached=%d), restoring usage fields from cache", result.WidgetCount, cached.WidgetCount)
+			if ctx.Stdin.Cost.TotalCostUsd <= 0 {
+				ctx.Stdin.Cost = cached.CachedStdin.Cost
+			}
+			if ctx.Stdin.ContextWindow.TotalInputTokens+ctx.Stdin.ContextWindow.TotalOutputTokens == 0 {
+				ctx.Stdin.ContextWindow = cached.CachedStdin.ContextWindow
+			}
 		}
-		result = orchestrate(ctx)
+
+		if restoreWorkspace || usageDegraded {
+			result = orchestrate(ctx)
+		}
 	}
 
 	sep := renderSeparator(cfg.Separator, getTheme(cfg.Theme))
