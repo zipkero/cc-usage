@@ -183,7 +183,9 @@ type rateLimit7dSonnetWidget struct{}
 func (w rateLimit7dSonnetWidget) ID() string { return "rateLimit7dSonnet" }
 
 func (w rateLimit7dSonnetWidget) GetData(ctx *Context) (any, error) {
-	// API only (stdin doesn't have sonnet-specific data)
+	// API only (stdin doesn't have sonnet-specific data). Unlike 5h/7d, skip
+	// entirely when data is missing — Sonnet-specific limits are only useful
+	// when the user actually has Sonnet activity, so "--" placeholder is noise.
 	if ctx.RateLimits != nil && ctx.RateLimits.SevenDaySonnet != nil {
 		entry := ctx.RateLimits.SevenDaySonnet
 		return &rateLimitData{
@@ -191,7 +193,7 @@ func (w rateLimit7dSonnetWidget) GetData(ctx *Context) (any, error) {
 			ResetsAt: entry.ResetsAt,
 		}, nil
 	}
-	return &rateLimitData{Unavailable: true}, nil
+	return nil, nil
 }
 
 func (w rateLimit7dSonnetWidget) Render(data any, ctx *Context) string {

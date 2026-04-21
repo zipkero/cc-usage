@@ -110,6 +110,19 @@ func main() {
 		}
 	}
 
+	// Suppress output when stdin lacks any session identity (workspace, model,
+	// context) even after cache restoration. Without this, cost/rate-limit
+	// widgets — which render unconditionally — would produce partial output
+	// like "$0.00 │ 5h: -- │ 7d: --" on calls with empty stdin (e.g. right
+	// after /reload-plugins before Claude Code has warmed the session).
+	noIdentity := ctx.Stdin.Workspace.CurrentDir == "" &&
+		ctx.Stdin.Model.ID == "" && ctx.Stdin.Model.DisplayName == "" &&
+		ctx.Stdin.ContextWindow.ContextWindowSize <= 0
+	if noIdentity {
+		debugLog("main", "stdin has no identity context, suppressing output")
+		return
+	}
+
 	sep := renderSeparator(cfg.Separator, getTheme(cfg.Theme))
 
 	var partsOutput string
