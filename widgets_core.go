@@ -97,10 +97,11 @@ type costWidget struct{}
 func (w costWidget) ID() string { return "cost" }
 
 func (w costWidget) GetData(ctx *Context) (any, error) {
-	if ctx.Stdin.Cost.TotalCostUsd <= 0 {
-		return nil, nil
+	cost := ctx.Stdin.Cost.TotalCostUsd
+	if cost < 0 {
+		cost = 0
 	}
-	return ctx.Stdin.Cost.TotalCostUsd, nil
+	return cost, nil
 }
 
 func (w costWidget) Render(data any, ctx *Context) string {
@@ -114,8 +115,9 @@ func (w costWidget) Render(data any, ctx *Context) string {
 type rateLimit5hWidget struct{}
 
 type rateLimitData struct {
-	Percent  int
-	ResetsAt time.Time
+	Percent     int
+	ResetsAt    time.Time
+	Unavailable bool
 }
 
 func (w rateLimit5hWidget) ID() string { return "rateLimit5h" }
@@ -137,7 +139,7 @@ func (w rateLimit5hWidget) GetData(ctx *Context) (any, error) {
 			ResetsAt: entry.ResetsAt,
 		}, nil
 	}
-	return nil, nil
+	return &rateLimitData{Unavailable: true}, nil
 }
 
 func (w rateLimit5hWidget) Render(data any, ctx *Context) string {
@@ -167,7 +169,7 @@ func (w rateLimit7dWidget) GetData(ctx *Context) (any, error) {
 			ResetsAt: entry.ResetsAt,
 		}, nil
 	}
-	return nil, nil
+	return &rateLimitData{Unavailable: true}, nil
 }
 
 func (w rateLimit7dWidget) Render(data any, ctx *Context) string {
@@ -189,7 +191,7 @@ func (w rateLimit7dSonnetWidget) GetData(ctx *Context) (any, error) {
 			ResetsAt: entry.ResetsAt,
 		}, nil
 	}
-	return nil, nil
+	return &rateLimitData{Unavailable: true}, nil
 }
 
 func (w rateLimit7dSonnetWidget) Render(data any, ctx *Context) string {
@@ -200,8 +202,12 @@ func (w rateLimit7dSonnetWidget) Render(data any, ctx *Context) string {
 func renderRateLimit(data any, label string, ctx *Context) string {
 	d := data.(*rateLimitData)
 	theme := getTheme(ctx.Config.Theme)
-	color := getColorForPercent(d.Percent, theme)
 
+	if d.Unavailable {
+		return fmt.Sprintf("%s%s:%s %s--%s", theme.Secondary, label, RESET, theme.Dim, RESET)
+	}
+
+	color := getColorForPercent(d.Percent, theme)
 	result := fmt.Sprintf("%s%s: %s%d%%%s", theme.Secondary, label, color, d.Percent, RESET)
 
 	if !d.ResetsAt.IsZero() {
