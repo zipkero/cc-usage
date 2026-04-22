@@ -64,8 +64,8 @@ func main() {
 	debugLog("main", "translations loaded: lang=%s", cfg.Language)
 
 	// Load cached session state
-	sessionID := input.SessionId
-	cached := loadSessionState(sessionID)
+	cacheKey := sessionCacheKey(input)
+	cached := loadSessionState(cacheKey)
 
 	ctx := &Context{
 		Stdin:        input,
@@ -146,7 +146,7 @@ func main() {
 	if result.WidgetCount >= 2 {
 		snapshot := ctx.Stdin
 		snapshot.RateLimits = nil
-		saveSessionState(sessionID, &SessionState{
+		saveSessionState(cacheKey, &SessionState{
 			CachedStdin: &snapshot,
 			WidgetCount: result.WidgetCount,
 		})

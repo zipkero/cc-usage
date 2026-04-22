@@ -61,7 +61,7 @@ var lastCleanup time.Time
 
 const (
 	apiURL           = "https://api.anthropic.com/api/oauth/usage"
-	userAgent        = "cc-usage/0.1.0"
+	userAgent        = "cc-usage/0.1.1"
 	apiBeta          = "oauth-2025-04-20"
 	negativeCacheTTL = 30 * time.Second
 	staleCacheMaxAge = time.Hour
@@ -256,13 +256,19 @@ func cacheFilePath(hash string) string {
 
 // readFileCache reads a cache entry from disk.
 func readFileCache(hash string) *cacheEntry {
-	data, err := os.ReadFile(cacheFilePath(hash))
-	if err != nil {
+	path := cacheFilePath(hash)
+	if _, err := os.Stat(path); err != nil {
 		return nil
 	}
 	var entry cacheEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		debugLog("api", "file cache parse error: %v", err)
+	if err := withCacheFileLock(path, func() error {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(data, &entry)
+	}); err != nil {
+		debugLog("api", "file cache read/parse error: %v", err)
 		return nil
 	}
 	return &entry
@@ -281,7 +287,9 @@ func writeFileCache(hash string, entry *cacheEntry) {
 		debugLog("api", "cache marshal failed: %v", err)
 		return
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := withCacheFileLock(path, func() error {
+		return atomicWriteFile(path, data, 0644)
+	}); err != nil {
 		debugLog("api", "cache write failed: %v", err)
 	}
 }
