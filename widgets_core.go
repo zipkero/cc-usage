@@ -41,7 +41,7 @@ func (w modelWidget) Render(data any, ctx *Context) string {
 		emoji = "○"
 	}
 
-	name := shortenModelName(d.DisplayName)
+	name := shortenModelName(d.DisplayName, d.ID)
 	if name == "" {
 		name = d.ID
 	}

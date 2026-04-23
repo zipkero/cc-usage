@@ -65,16 +65,83 @@ func formatDuration(ms int64) string {
 	return fmt.Sprintf("%dm", minutes)
 }
 
-func shortenModelName(displayName string) string {
-	// displayName is already short like "Opus", "Sonnet", "Haiku"
-	// Handle longer forms like "Claude 3.5 Sonnet" → "Sonnet"
-	known := []string{"Opus", "Sonnet", "Haiku"}
-	for _, k := range known {
-		if strings.Contains(displayName, k) {
-			return k
+func shortenModelName(displayName, id string) string {
+	// Try to extract family + version from id like "claude-opus-4-7" → "Opus 4.7"
+	family, version := parseModelID(id)
+	if family == "" {
+		known := []string{"Opus", "Sonnet", "Haiku"}
+		for _, k := range known {
+			if strings.Contains(displayName, k) {
+				family = k
+				break
+			}
 		}
 	}
-	return displayName
+	if family == "" {
+		return displayName
+	}
+	if version != "" {
+		return family + " " + version
+	}
+	return family
+}
+
+// parseModelID extracts family and version from IDs like "claude-opus-4-7" or
+// "claude-3-5-sonnet-20240620". Returns empty strings if parsing fails.
+func parseModelID(id string) (family, version string) {
+	if id == "" {
+		return "", ""
+	}
+	parts := strings.Split(strings.ToLower(id), "-")
+	familyIdx := -1
+	for i, p := range parts {
+		switch p {
+		case "opus":
+			family, familyIdx = "Opus", i
+		case "sonnet":
+			family, familyIdx = "Sonnet", i
+		case "haiku":
+			family, familyIdx = "Haiku", i
+		}
+		if familyIdx >= 0 {
+			break
+		}
+	}
+	if familyIdx < 0 {
+		return "", ""
+	}
+	// Collect numeric segments adjacent to the family token (after, then before).
+	var nums []string
+	for i := familyIdx + 1; i < len(parts) && isNumericSeg(parts[i]); i++ {
+		nums = append(nums, parts[i])
+	}
+	if len(nums) == 0 {
+		var before []string
+		for i := familyIdx - 1; i >= 0 && isNumericSeg(parts[i]); i-- {
+			before = append([]string{parts[i]}, before...)
+		}
+		nums = before
+	}
+	// Skip date-like trailing segments (e.g., 20240620).
+	for len(nums) > 0 && len(nums[len(nums)-1]) >= 6 {
+		nums = nums[:len(nums)-1]
+	}
+	if len(nums) == 0 {
+		return family, ""
+	}
+	return family, strings.Join(nums, ".")
+}
+
+func isNumericSeg(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func calculatePercent(current, total int) int {
