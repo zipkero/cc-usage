@@ -41,9 +41,9 @@ func (w modelWidget) Render(data any, ctx *Context) string {
 		emoji = "○"
 	}
 
-	name := shortenModelName(d.DisplayName, d.ID)
+	name := d.ID
 	if name == "" {
-		name = d.ID
+		name = d.DisplayName
 	}
 
 	return fmt.Sprintf("%s%s %s%s", theme.Model, emoji, name, RESET)
