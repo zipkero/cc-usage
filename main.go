@@ -82,9 +82,13 @@ func main() {
 	// has it. Restore the minimum needed so widgets don't flicker away.
 	if cached != nil && cached.CachedStdin != nil {
 		workspaceStale := ctx.Stdin.Workspace.CurrentDir == "" && cached.CachedStdin.Workspace.CurrentDir != ""
+		modelStale := ctx.Stdin.Model.ID == "" && ctx.Stdin.Model.DisplayName == "" &&
+			(cached.CachedStdin.Model.ID != "" || cached.CachedStdin.Model.DisplayName != "")
 		usageDegraded := result.WidgetCount < cached.WidgetCount
 
 		restoreWorkspace := workspaceStale && cached.SavedAt > 0 &&
+			time.Since(time.Unix(cached.SavedAt, 0)) < workspaceRestoreTTL
+		restoreModel := modelStale && cached.SavedAt > 0 &&
 			time.Since(time.Unix(cached.SavedAt, 0)) < workspaceRestoreTTL
 
 		if restoreWorkspace {
@@ -93,6 +97,10 @@ func main() {
 			if ctx.Stdin.Worktree == nil {
 				ctx.Stdin.Worktree = cached.CachedStdin.Worktree
 			}
+		}
+		if restoreModel {
+			debugLog("main", "model empty, restoring from cache (age < %s)", workspaceRestoreTTL)
+			ctx.Stdin.Model = cached.CachedStdin.Model
 		}
 
 		if usageDegraded {
@@ -105,7 +113,7 @@ func main() {
 			}
 		}
 
-		if restoreWorkspace || usageDegraded {
+		if restoreWorkspace || restoreModel || usageDegraded {
 			result = orchestrate(ctx)
 		}
 	}
@@ -119,7 +127,8 @@ func main() {
 		ctx.Stdin.Model.ID == "" && ctx.Stdin.Model.DisplayName == "" &&
 		ctx.Stdin.ContextWindow.ContextWindowSize <= 0
 	if noIdentity {
-		debugLog("main", "stdin has no identity context, suppressing output")
+		debugLog("main", "stdin has no identity context, suppressing output (session_id=%q remote=%t agent_id=%q transcript_path=%q current_dir=%q)",
+			ctx.Stdin.SessionId, ctx.Stdin.Remote != nil, ctx.Stdin.AgentId, ctx.Stdin.TranscriptPath, ctx.Stdin.Workspace.CurrentDir)
 		return
 	}
 
