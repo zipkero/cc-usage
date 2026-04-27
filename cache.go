@@ -10,16 +10,15 @@ import (
 	"time"
 )
 
-// sessionStateTTL caps how long a cached SessionState is considered fresh.
-// Stale entries prevent cost/currentDir from freezing indefinitely when stdin
-// keeps arriving degraded or empty. RateLimit values are not subject to this
-// TTL because they are re-fetched from the account-global API cache each run.
-const sessionStateTTL = 300 * time.Second
+// sessionStateTTL caps how long a cached SessionState with a strong session
+// identity is considered fresh. This needs to survive long idle gaps because
+// Claude Code may resume by sending a degraded status-line payload first.
+const sessionStateTTL = 24 * time.Hour
 
-// workspaceRestoreTTL limits how recently cached workspace/worktree fields
-// can be restored on degrade. Shorter than sessionStateTTL because a stale
-// cwd is more user-visible than stale cost/context numbers.
-const workspaceRestoreTTL = 30 * time.Second
+// weakSessionStateTTL is used for cwd-only cache keys. A cwd can be shared by
+// multiple sessions, so keep that restore window short to avoid cross-session
+// confusion.
+const weakSessionStateTTL = 5 * time.Minute
 
 const (
 	cacheLockTimeout    = 200 * time.Millisecond
@@ -139,6 +138,13 @@ func sessionStatePath(cacheKey string) string {
 	return filepath.Join(home, ".cache", "cc-usage", "session-state-"+cacheKey+".json")
 }
 
+func sessionStateTTLForKey(cacheKey string) time.Duration {
+	if strings.HasPrefix(cacheKey, "cwd-") {
+		return weakSessionStateTTL
+	}
+	return sessionStateTTL
+}
+
 func loadSessionState(cacheKey string) *SessionState {
 	path := sessionStatePath(cacheKey)
 	if path == "" {
@@ -163,8 +169,9 @@ func loadSessionState(cacheKey string) *SessionState {
 		debugLog("cache", "ignoring legacy cache format")
 		return nil
 	}
-	if state.SavedAt > 0 && time.Since(time.Unix(state.SavedAt, 0)) > sessionStateTTL {
-		debugLog("cache", "session state expired (age > %s)", sessionStateTTL)
+	ttl := sessionStateTTLForKey(cacheKey)
+	if state.SavedAt > 0 && time.Since(time.Unix(state.SavedAt, 0)) > ttl {
+		debugLog("cache", "session state expired (age > %s)", ttl)
 		return nil
 	}
 	return &state

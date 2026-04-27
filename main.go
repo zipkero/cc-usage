@@ -86,20 +86,21 @@ func main() {
 			(cached.CachedStdin.Model.ID != "" || cached.CachedStdin.Model.DisplayName != "")
 		usageDegraded := result.WidgetCount < cached.WidgetCount
 
+		restoreTTL := sessionStateTTLForKey(cacheKey)
 		restoreWorkspace := workspaceStale && cached.SavedAt > 0 &&
-			time.Since(time.Unix(cached.SavedAt, 0)) < workspaceRestoreTTL
+			time.Since(time.Unix(cached.SavedAt, 0)) < restoreTTL
 		restoreModel := modelStale && cached.SavedAt > 0 &&
-			time.Since(time.Unix(cached.SavedAt, 0)) < workspaceRestoreTTL
+			time.Since(time.Unix(cached.SavedAt, 0)) < restoreTTL
 
 		if restoreWorkspace {
-			debugLog("main", "workspace empty, restoring from cache (age < %s)", workspaceRestoreTTL)
+			debugLog("main", "workspace empty, restoring from cache (age < %s)", restoreTTL)
 			ctx.Stdin.Workspace = cached.CachedStdin.Workspace
 			if ctx.Stdin.Worktree == nil {
 				ctx.Stdin.Worktree = cached.CachedStdin.Worktree
 			}
 		}
 		if restoreModel {
-			debugLog("main", "model empty, restoring from cache (age < %s)", workspaceRestoreTTL)
+			debugLog("main", "model empty, restoring from cache (age < %s)", restoreTTL)
 			ctx.Stdin.Model = cached.CachedStdin.Model
 		}
 

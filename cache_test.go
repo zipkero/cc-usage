@@ -84,6 +84,75 @@ func TestSaveAndLoadSessionState(t *testing.T) {
 	}
 }
 
+func TestLoadSessionStateKeepsStrongIdentityAcrossIdle(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+
+	input := StdinInput{SessionId: "abc-123"}
+	input.Model.ID = "claude-opus-4-6"
+	saveSessionState("abc-123", &SessionState{
+		CachedStdin: &input,
+		WidgetCount: 2,
+	})
+
+	path := sessionStatePath("abc-123")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read session state failed: %v", err)
+	}
+	var state SessionState
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("json parse failed: %v", err)
+	}
+	state.SavedAt = time.Now().Add(-2 * time.Hour).Unix()
+	data, err = json.Marshal(state)
+	if err != nil {
+		t.Fatalf("json marshal failed: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("write session state failed: %v", err)
+	}
+
+	if got := loadSessionState("abc-123"); got == nil {
+		t.Fatal("strong identity cache expired during idle window")
+	}
+}
+
+func TestLoadSessionStateExpiresCwdOnlyCacheQuickly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+
+	input := StdinInput{}
+	input.Workspace.CurrentDir = "C:/tmp/project"
+	key := sessionCacheKey(input)
+	saveSessionState(key, &SessionState{
+		CachedStdin: &input,
+		WidgetCount: 2,
+	})
+
+	path := sessionStatePath(key)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read session state failed: %v", err)
+	}
+	var state SessionState
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("json parse failed: %v", err)
+	}
+	state.SavedAt = time.Now().Add(-10 * time.Minute).Unix()
+	data, err = json.Marshal(state)
+	if err != nil {
+		t.Fatalf("json marshal failed: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("write session state failed: %v", err)
+	}
+
+	if got := loadSessionState(key); got != nil {
+		t.Fatal("cwd-only cache survived past weak idle window")
+	}
+}
+
 func TestAtomicWriteFileReplacesValidJSON(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 
