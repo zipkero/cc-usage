@@ -14,6 +14,7 @@ import (
 type projectInfoWidget struct{}
 
 type projectInfoData struct {
+	FullPath string
 	DirName  string
 	Branch   string
 	Ahead    int
@@ -31,7 +32,8 @@ func (w projectInfoWidget) GetData(ctx *Context) (any, error) {
 	}
 
 	d := &projectInfoData{
-		DirName: filepath.Base(currentDir),
+		FullPath: currentDir,
+		DirName:  filepath.Base(currentDir),
 	}
 
 	// subpath: project_dir != current_dir
@@ -97,9 +99,12 @@ func (w projectInfoWidget) Render(data any, ctx *Context) string {
 
 	var b strings.Builder
 
-	// dirname (truncate long names)
-	dirName := truncate(d.DirName, 25)
-	b.WriteString(fmt.Sprintf("%s%s%s", theme.Folder, dirName, RESET))
+	name := d.FullPath
+	if ctx.LayoutSingleLine {
+		name = d.DirName
+		name = truncate(name, 25)
+	}
+	b.WriteString(fmt.Sprintf("%s%s%s", theme.Folder, name, RESET))
 
 	// branch info
 	if d.Branch != "" {

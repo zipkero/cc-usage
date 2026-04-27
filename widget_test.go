@@ -44,3 +44,34 @@ func TestProjectInfoFollowsCustomLinePosition(t *testing.T) {
 		t.Fatalf("projectInfo did not follow custom order: %q", line)
 	}
 }
+
+func TestProjectInfoUsesFullPathWhenLayoutHasMultipleConfiguredLines(t *testing.T) {
+	currentDir := t.TempDir()
+	dirName := filepath.Base(currentDir)
+
+	ctx := &Context{
+		Config: Config{
+			DisplayMode: "custom",
+			Lines: [][]string{
+				{"model"},
+				{"projectInfo"},
+			},
+			Separator: "space",
+		},
+		Translations: loadTranslations("en"),
+	}
+	ctx.Stdin.Model.ID = "claude-opus-4-7"
+	ctx.Stdin.Workspace.CurrentDir = currentDir
+	ctx.Stdin.Workspace.ProjectDir = currentDir
+
+	result := orchestrate(ctx)
+	if len(result.Lines) != 2 {
+		t.Fatalf("line count = %d, want 2", len(result.Lines))
+	}
+	if !strings.Contains(result.Lines[1], currentDir) {
+		t.Fatalf("projectInfo line = %q, want full path %q", result.Lines[1], currentDir)
+	}
+	if result.Lines[1] == dirName {
+		t.Fatalf("projectInfo line used only basename: %q", result.Lines[1])
+	}
+}

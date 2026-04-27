@@ -97,11 +97,12 @@ func detectLanguage() string {
 
 // Context holds all data needed by widgets.
 type Context struct {
-	Stdin        StdinInput
-	Config       Config
-	ConfigDir    string
-	Translations *Translations
-	RateLimits   *UsageLimits
+	Stdin            StdinInput
+	Config           Config
+	ConfigDir        string
+	Translations     *Translations
+	RateLimits       *UsageLimits
+	LayoutSingleLine bool
 }
 
 // Widget is the interface all widgets must implement.
@@ -207,14 +208,8 @@ type OrchestrateResult struct {
 func orchestrate(ctx *Context) OrchestrateResult {
 	resolvePreset(&ctx.Config)
 
-	var lines [][]string
-	if ctx.Config.DisplayMode == "custom" && len(ctx.Config.Lines) > 0 {
-		lines = ctx.Config.Lines
-	} else if preset, ok := displayPresets[ctx.Config.DisplayMode]; ok {
-		lines = preset
-	} else {
-		lines = displayPresets["compact"]
-	}
+	lines := resolveLayoutLines(ctx.Config)
+	ctx.LayoutSingleLine = len(lines) == 1
 
 	// Build disabled set
 	disabled := make(map[string]bool)
@@ -252,4 +247,14 @@ func orchestrate(ctx *Context) OrchestrateResult {
 		}
 	}
 	return result
+}
+
+func resolveLayoutLines(config Config) [][]string {
+	if config.DisplayMode == "custom" && len(config.Lines) > 0 {
+		return config.Lines
+	}
+	if preset, ok := displayPresets[config.DisplayMode]; ok {
+		return preset
+	}
+	return displayPresets["compact"]
 }
