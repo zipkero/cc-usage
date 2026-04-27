@@ -132,21 +132,13 @@ func main() {
 		return
 	}
 
-	sep := renderSeparator(cfg.Separator, getTheme(cfg.Theme))
-
 	var partsOutput string
 	if len(result.Lines) > 0 {
 		partsOutput = strings.Join(result.Lines, "\n")
 	}
 
 	if partsOutput != "" {
-		if result.HasProject {
-			fmt.Print(result.ProjectInfo + sep + partsOutput)
-		} else {
-			fmt.Print(partsOutput)
-		}
-	} else if result.HasProject {
-		fmt.Print(result.ProjectInfo)
+		fmt.Print(partsOutput)
 	}
 
 	// Save stdin (not rendered strings) so a future degrade can re-render with

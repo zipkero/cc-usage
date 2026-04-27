@@ -61,7 +61,7 @@ var lastCleanup time.Time
 
 const (
 	apiURL           = "https://api.anthropic.com/api/oauth/usage"
-	userAgent        = "cc-usage/0.1.3"
+	userAgent        = "cc-usage/0.1.4"
 	apiBeta          = "oauth-2025-04-20"
 	negativeCacheTTL = 30 * time.Second
 	staleCacheMaxAge = time.Hour

@@ -1,6 +1,6 @@
 {
   "name": "cc-usage",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Claude Code status line plugin — shows model, context, cost, rate limits, and more",
   "author": {
     "name": "zipkero"

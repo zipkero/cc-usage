@@ -1,5 +1,5 @@
 BINARY := cc-usage
-VERSION := 0.1.3
+VERSION := 0.1.4
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 windows/amd64
 
 .PHONY: build build-local test clean
