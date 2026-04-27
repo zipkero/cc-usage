@@ -31,16 +31,16 @@ type UsageLimits struct {
 // apiUsageResponse is the JSON shape returned by the usage API.
 type apiUsageResponse struct {
 	FiveHour struct {
-		Utilization int    `json:"utilization"`
-		ResetsAt    string `json:"resets_at"`
+		Utilization float64 `json:"utilization"`
+		ResetsAt    string  `json:"resets_at"`
 	} `json:"five_hour"`
 	SevenDay struct {
-		Utilization int    `json:"utilization"`
-		ResetsAt    string `json:"resets_at"`
+		Utilization float64 `json:"utilization"`
+		ResetsAt    string  `json:"resets_at"`
 	} `json:"seven_day"`
 	SevenDaySonnet struct {
-		Utilization int    `json:"utilization"`
-		ResetsAt    string `json:"resets_at"`
+		Utilization float64 `json:"utilization"`
+		ResetsAt    string  `json:"resets_at"`
 	} `json:"seven_day_sonnet"`
 }
 
@@ -61,7 +61,7 @@ var lastCleanup time.Time
 
 const (
 	apiURL           = "https://api.anthropic.com/api/oauth/usage"
-	userAgent        = "cc-usage/0.1.1"
+	userAgent        = "cc-usage/0.1.2"
 	apiBeta          = "oauth-2025-04-20"
 	negativeCacheTTL = 30 * time.Second
 	staleCacheMaxAge = time.Hour
@@ -315,16 +315,17 @@ func parseUsageLimits(resp *apiUsageResponse) *UsageLimits {
 }
 
 // parseEntry parses a single utilization/resets_at pair into a UsageLimitEntry.
-func parseEntry(utilization int, resetsAt string) *UsageLimitEntry {
+func parseEntry(utilization float64, resetsAt string) *UsageLimitEntry {
+	percent := clampPercent(utilization)
 	if resetsAt == "" {
-		return &UsageLimitEntry{Utilization: utilization}
+		return &UsageLimitEntry{Utilization: percent}
 	}
 	t, err := time.Parse(time.RFC3339, resetsAt)
 	if err != nil {
 		debugLog("api", "parse resets_at failed: %v", err)
-		return &UsageLimitEntry{Utilization: utilization}
+		return &UsageLimitEntry{Utilization: percent}
 	}
-	return &UsageLimitEntry{Utilization: utilization, ResetsAt: t}
+	return &UsageLimitEntry{Utilization: percent, ResetsAt: t}
 }
 
 // cleanOldCaches removes cache files older than 1 hour. Fire-and-forget.
