@@ -15,10 +15,10 @@ import (
 // Claude Code may resume by sending a degraded status-line payload first.
 const sessionStateTTL = 24 * time.Hour
 
-// weakSessionStateTTL is used for cwd-only cache keys. A cwd can be shared by
-// multiple sessions, so keep that restore window short to avoid cross-session
-// confusion.
-const weakSessionStateTTL = 5 * time.Minute
+// cwdSessionStateTTL is used for cwd-only cache keys. It is intentionally
+// profile-local and project-scoped so an identity-less idle refresh can keep
+// the last visible render without falling back to a different project.
+const cwdSessionStateTTL = 24 * time.Hour
 
 const (
 	cacheLockTimeout    = 200 * time.Millisecond
@@ -32,6 +32,7 @@ type SessionState struct {
 	CachedStdin *StdinInput `json:"cached_stdin,omitempty"`
 	WidgetCount int         `json:"widget_count"`
 	SavedAt     int64       `json:"saved_at,omitempty"`
+	LastOutput  string      `json:"last_output,omitempty"`
 }
 
 func sessionCacheKey(input StdinInput) string {
@@ -140,7 +141,7 @@ func sessionStatePath(cacheKey string) string {
 
 func sessionStateTTLForKey(cacheKey string) time.Duration {
 	if strings.HasPrefix(cacheKey, "cwd-") {
-		return weakSessionStateTTL
+		return cwdSessionStateTTL
 	}
 	return sessionStateTTL
 }

@@ -65,7 +65,16 @@ func main() {
 
 	// Load cached session state
 	cacheKey := sessionCacheKey(input)
+	cwdCacheKey := ""
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		cwdCacheKey = "cwd-" + hashCacheKey(filepath.Clean(cwd))
+	}
 	cached := loadSessionState(cacheKey)
+	loadedCacheKey := cacheKey
+	if cached == nil && cacheKey == "" && cwdCacheKey != "" {
+		cached = loadSessionState(cwdCacheKey)
+		loadedCacheKey = cwdCacheKey
+	}
 
 	ctx := &Context{
 		Stdin:        input,
@@ -86,7 +95,7 @@ func main() {
 			(cached.CachedStdin.Model.ID != "" || cached.CachedStdin.Model.DisplayName != "")
 		usageDegraded := result.WidgetCount < cached.WidgetCount
 
-		restoreTTL := sessionStateTTLForKey(cacheKey)
+		restoreTTL := sessionStateTTLForKey(loadedCacheKey)
 		restoreWorkspace := workspaceStale && cached.SavedAt > 0 &&
 			time.Since(time.Unix(cached.SavedAt, 0)) < restoreTTL
 		restoreModel := modelStale && cached.SavedAt > 0 &&
@@ -128,6 +137,11 @@ func main() {
 		ctx.Stdin.Model.ID == "" && ctx.Stdin.Model.DisplayName == "" &&
 		ctx.Stdin.ContextWindow.ContextWindowSize <= 0
 	if noIdentity {
+		if cached != nil && cached.LastOutput != "" {
+			debugLog("main", "stdin has no identity context, reusing cached output (cache_key=%q)", loadedCacheKey)
+			fmt.Print(cached.LastOutput)
+			return
+		}
 		debugLog("main", "stdin has no identity context, suppressing output (session_id=%q remote=%t agent_id=%q transcript_path=%q current_dir=%q)",
 			ctx.Stdin.SessionId, ctx.Stdin.Remote != nil, ctx.Stdin.AgentId, ctx.Stdin.TranscriptPath, ctx.Stdin.Workspace.CurrentDir)
 		return
@@ -148,9 +162,17 @@ func main() {
 	if result.WidgetCount >= 2 {
 		snapshot := ctx.Stdin
 		snapshot.RateLimits = nil
-		saveSessionState(cacheKey, &SessionState{
+		state := &SessionState{
 			CachedStdin: &snapshot,
 			WidgetCount: result.WidgetCount,
-		})
+			LastOutput:  partsOutput,
+		}
+		saveSessionState(cacheKey, state)
+		if ctx.Stdin.Workspace.CurrentDir != "" {
+			workspaceCacheKey := "cwd-" + hashCacheKey(filepath.Clean(ctx.Stdin.Workspace.CurrentDir))
+			if workspaceCacheKey != cacheKey {
+				saveSessionState(workspaceCacheKey, state)
+			}
+		}
 	}
 }

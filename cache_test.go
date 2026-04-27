@@ -65,6 +65,7 @@ func TestSaveAndLoadSessionState(t *testing.T) {
 	saveSessionState("abc-123", &SessionState{
 		CachedStdin: &input,
 		WidgetCount: 2,
+		LastOutput:  "cached render",
 	})
 
 	legacyPath := filepath.Join(home, ".cache", "cc-usage", "session-state.json")
@@ -81,6 +82,9 @@ func TestSaveAndLoadSessionState(t *testing.T) {
 	}
 	if state.WidgetCount != 2 {
 		t.Fatalf("widget count = %d, want 2", state.WidgetCount)
+	}
+	if state.LastOutput != "cached render" {
+		t.Fatalf("last output = %q, want cached render", state.LastOutput)
 	}
 }
 
@@ -118,7 +122,7 @@ func TestLoadSessionStateKeepsStrongIdentityAcrossIdle(t *testing.T) {
 	}
 }
 
-func TestLoadSessionStateExpiresCwdOnlyCacheQuickly(t *testing.T) {
+func TestLoadSessionStateKeepsCwdCacheAcrossIdle(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("USERPROFILE", home)
 
@@ -139,7 +143,7 @@ func TestLoadSessionStateExpiresCwdOnlyCacheQuickly(t *testing.T) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		t.Fatalf("json parse failed: %v", err)
 	}
-	state.SavedAt = time.Now().Add(-10 * time.Minute).Unix()
+	state.SavedAt = time.Now().Add(-2 * time.Hour).Unix()
 	data, err = json.Marshal(state)
 	if err != nil {
 		t.Fatalf("json marshal failed: %v", err)
@@ -148,8 +152,8 @@ func TestLoadSessionStateExpiresCwdOnlyCacheQuickly(t *testing.T) {
 		t.Fatalf("write session state failed: %v", err)
 	}
 
-	if got := loadSessionState(key); got != nil {
-		t.Fatal("cwd-only cache survived past weak idle window")
+	if got := loadSessionState(key); got == nil {
+		t.Fatal("cwd cache expired during idle window")
 	}
 }
 
