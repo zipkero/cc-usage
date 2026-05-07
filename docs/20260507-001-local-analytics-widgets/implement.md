@@ -1,0 +1,97 @@
+# Local Analytics Widgets Implement
+
+## 체크리스트
+- [ ] TASK-001: 세션 시작 시간 상태 저장을 추가한다
+  - 목적: 같은 세션에서는 최초 관찰 시각을 유지하고, 다른 세션에서는 별도 시작 시각을 갖는 로컬 상태 기반을 만든다.
+  - 근거 문서: SPEC 완료 조건 1, 9, ANALYSIS 구조, 데이터 흐름, 리스크, 검증 관점
+  - 대상:
+    - `cache.go` 또는 새 세션 상태 파일
+    - 관련 테스트 파일
+  - 접근:
+    - 기존 `sessionCacheKey`를 세션 식별 기준으로 사용한다.
+    - 기존 `withCacheFileLock`과 `atomicWriteFile`을 재사용해 `~/.cache/cc-usage/sessions/` 아래에 세션 시작 상태를 저장한다.
+    - 기존 `SessionState`에는 분석용 시작 시간을 합치지 않는다.
+    - cache key가 없으면 시작 상태를 만들지 않고 위젯이 숨길 수 있는 결과를 반환한다.
+  - 검증 조건:
+    - 결과: 동일 key를 여러 번 조회해도 최초 시작 시간이 유지된다.
+    - 결과: 다른 key는 서로 다른 시작 상태를 가진다.
+    - 결과: 상태 파일이 없을 때 생성되고, 경쟁 상황에서도 나중 실행이 시작 시간을 덮어쓰지 않는다.
+    - 확인: 세션 상태 단위 테스트를 추가하고 `go test ./...`로 통과를 확인한다.
+
+- [ ] TASK-002: 세션 경과 기반 위젯을 구현한다
+  - 목적: `sessionDuration`, `burnRate`, `depletionTime`, `forecast`가 세션 시작 시간을 공유해 경과 시간, 토큰 소비 속도, 한도 도달 예상, 시간당 비용을 표시하게 한다.
+  - 근거 문서: SPEC 완료 조건 1, 2, 6, 7, 9, ANALYSIS 구조, 데이터 흐름, 인터페이스, 리스크, 검증 관점
+  - 대상:
+    - `widgets_analytics.go`
+    - 필요한 경우 `format.go`
+    - 관련 위젯 테스트 파일
+  - 접근:
+    - `sessionDuration`은 세션 시작 시각과 현재 시각 차이를 기존 duration 포맷 계열로 표시한다.
+    - `burnRate`는 `total_input_tokens + total_output_tokens`를 경과 분으로 나누고, 1분 미만 또는 토큰 0이면 숨긴다.
+    - `depletionTime`은 5시간 rate limit 사용률을 stdin 우선, API fallback 순서로 읽고, 유효한 추세가 없으면 숨긴다.
+    - `forecast`는 현재 세션 비용을 시간당 비용으로 환산하고, 비용 0 이하 또는 유효한 경과 시간이 없으면 숨긴다.
+    - 계산은 단순 선형 예측으로 제한하고, 외부 API 호출이나 새 의존성을 추가하지 않는다.
+  - 검증 조건:
+    - 결과: 각 위젯이 정상 입력에서 기대하는 문자열 조각을 렌더링한다.
+    - 결과: 1분 미만 세션, 토큰 0, 비용 0, rate limit 부재, 사용률 0에서는 해당 위젯이 숨겨진다.
+    - 결과: `depletionTime`은 stdin rate limit을 API fallback보다 우선한다.
+    - 확인: 위젯별 `GetData`/렌더링 테스트를 추가하고 `go test ./...`로 통과를 확인한다.
+
+- [ ] TASK-003: stdin 기반 분석 위젯을 구현한다
+  - 목적: `cacheHit`, `tokenBreakdown`, `tokenSpeed`가 추가 상태 없이 stdin 데이터만으로 캐시 활용도, 토큰 구성, output token 속도를 표시하게 한다.
+  - 근거 문서: SPEC 완료 조건 3, 4, 5, 9, ANALYSIS 데이터 흐름, 인터페이스, 리스크, 검증 관점
+  - 대상:
+    - `widgets_analytics.go`
+    - 필요한 경우 `format.go`
+    - 관련 위젯 테스트 파일
+  - 접근:
+    - `cacheHit`은 `cache_read_input_tokens / (input_tokens + cache_creation_input_tokens + cache_read_input_tokens)`로 계산한다.
+    - `cacheHit` 색상은 높은 값이 좋은 지표라는 의미가 드러나도록 기존 위험도 색상 함수를 그대로 오용하지 않는다.
+    - `tokenBreakdown`은 input, output, cache creation, cache read 값을 구분해 표시하고 모두 0이면 숨긴다.
+    - `tokenSpeed`는 output token을 `total_api_duration_ms` 초로 나누고, duration nil 또는 0이면 숨긴다.
+  - 검증 조건:
+    - 결과: 정상 입력에서 캐시 적중률, 토큰 구성, 초당 output token 속도가 표시된다.
+    - 결과: 분모 0, 모든 토큰 0, nil 또는 0 API duration에서는 해당 위젯이 숨겨진다.
+    - 확인: 위젯별 정상/데이터 부족 테스트를 추가하고 `go test ./...`로 통과를 확인한다.
+
+- [ ] TASK-004: 위젯 등록과 레이아웃 노출을 완성한다
+  - 목적: `normal`, `detailed`, `custom`, `preset` 경로에서 로컬 분석 위젯을 사용할 수 있게 한다.
+  - 근거 문서: SPEC 완료 조건 8, 9, ANALYSIS 인터페이스, 영향 범위, 검증 관점
+  - 대상:
+    - `widget.go`
+    - `widgets_analytics.go`
+    - 관련 오케스트레이션 테스트 파일
+  - 접근:
+    - 새 분석 위젯을 registry에 등록한다.
+    - 기존 compact 출력은 변경하지 않는다.
+    - `normal`과 `detailed`에는 이번 범위의 위젯만 배치한다.
+    - `budget/todayCost`, transcript 기반 위젯, 외부 CLI 위젯은 이번 범위에서 새로 노출하지 않는다.
+    - 기존 preset 문자 매핑 `D`, `B`, `H`, `N`, `Q`, `E`, `W`가 실제 등록 위젯과 연결되도록 한다.
+  - 검증 조건:
+    - 결과: custom lines에서 대상 위젯 ID가 렌더링된다.
+    - 결과: preset 문자열로 대상 위젯이 렌더링된다.
+    - 결과: compact 출력 구성은 기존 의미를 유지한다.
+    - 확인: 오케스트레이션 테스트를 추가하고 `go test ./...`로 통과를 확인한다.
+
+- [ ] TASK-005: 통합 검증과 문서 상태를 정리한다
+  - 목적: 구현된 로컬 분석 위젯이 전체 status line 실행 경로에서 panic 없이 동작하고, 문서 기준을 검증 가능한 상태로 맞춘다.
+  - 근거 문서: SPEC 완료 조건 9, 10, ANALYSIS 검증 관점
+  - 대상:
+    - 테스트 파일
+    - `docs/20260507-001-local-analytics-widgets/README.md`
+    - 필요 시 사용자 문서
+  - 접근:
+    - 기존 helper process 패턴을 재사용할 수 있으면 실제 config와 stdin 기반 통합 테스트를 추가한다.
+    - 데이터 부족 stdin, degraded stdin, rate limit API 부재 상황에서 panic 없이 가능한 위젯만 출력되는지 확인한다.
+    - 구현과 검증이 끝난 뒤에만 feature README의 `IMPLEMENT` 상태를 갱신한다.
+  - 검증 조건:
+    - 결과: `go test ./...`가 통과한다.
+    - 결과: 새 위젯의 정상 계산과 데이터 부족 시 숨김 동작이 테스트로 확인된다.
+    - 결과: 구현 완료 후 feature README 상태와 이력이 실제 완료 상태와 일치한다.
+    - 확인: 테스트 로그와 git diff로 변경 범위를 확인한다.
+
+## 제외 항목
+- `budget`, `todayCost` 구현은 이 feature의 Task로 만들지 않는다. 일일 누적 비용 상태와 delta 추적은 별도 feature에서 다룬다.
+- `todoProgress`, `toolActivity`, `agentStatus`, `lastPrompt`, `sessionName`의 transcript 기반 구현은 이 feature의 Task로 만들지 않는다.
+- Codex, Gemini, z.ai 사용량 조회와 `cc-usage check` 서브커맨드는 이 feature의 Task로 만들지 않는다.
+- 기존 `compact` 출력의 의미 변경은 하지 않는다.
