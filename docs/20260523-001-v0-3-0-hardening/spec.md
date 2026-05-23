@@ -11,7 +11,7 @@ cc-usage v0.2.0의 운영 안정성과 코드 정합성을 개선하기 위한 �
 - **사용자 설정 신뢰성**: `displayMode` / `separator` / `theme` / `language` enum 값에 대한 입력 검증과 stderr 경고.
 - **회귀 방지**: 사용자 영향이 큰 preset 파싱, config merge, 새 분석 위젯의 edge case에 대한 단위 테스트 추가.
 
-릴리스 절차(master 코드+bin/ 커밋 → release 브랜치 sync)는 기존 워크플로(CLAUDE.md "배포" 섹션)를 그대로 따른다.
+릴리스 절차(main 코드+bin/ 커밋 → release 브랜치 sync)는 기존 워크플로(CLAUDE.md "배포" 섹션)를 그대로 따른다.
 
 ## 2. 목표
 
@@ -65,6 +65,6 @@ cc-usage v0.2.0의 운영 안정성과 코드 정합성을 개선하기 위한 �
 
 9. v0.3.0의 cc-usage 소스에서 다음 식별자가 ripgrep으로 발견되지 않는다(테스트 데이터, 코멘트, 본 spec 문서는 제외) — `memCache`, `negativeCache`, `DailyBudget`, `Plan`(struct 필드 의미), `last_output`(저장 경로), 그리고 i18n에서 사용처 없는 라벨(`NoContext`, `OneM`, `SevenDAll`).
 
-10. v0.3.0 push 이후 master는 5개 플랫폼 바이너리를 포함한 상태이고, release 브랜치는 master의 v0.3.0 변경분을 sync한 상태이며, GitHub default branch는 `release`를 유지한다.
+10. v0.3.0 push 이후 main은 5개 플랫폼 바이너리를 포함한 상태이고, release 브랜치는 main의 v0.3.0 변경분을 sync한 상태이며, GitHub default branch는 `release`를 유지한다.
 
 11. Anthropic Usage API 응답의 `utilization` 값이 정수(`12`)뿐 아니라 부동소수점(`12.5`)으로 와도 cc-usage는 decode 실패 없이 rate limit 위젯에 0~100 사이로 클램핑된 정수 퍼센트를 렌더한다.

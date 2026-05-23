@@ -99,9 +99,9 @@
 ## Section: 빌드 산출물 · 릴리스 sync
 
 - [ ] task-011: `make build` 산출물 커밋 및 release 브랜치 sync
-  - 목적: master는 v0.3.0 변경분과 5개 플랫폼 바이너리를 포함한 상태가 되고, release 브랜치는 master의 v0.3.0을 sync한 상태가 되며, GitHub default branch는 `release`를 유지한다
+  - 목적: main은 v0.3.0 변경분과 5개 플랫폼 바이너리를 포함한 상태가 되고, release 브랜치는 main의 v0.3.0을 sync한 상태가 되며, GitHub default branch는 `release`를 유지한다
   - 접근: 모든 코드 Task와 테스트 통과 확인 후 `make build`로 `bin/` 5개 바이너리를 재생성하고 git에 커밋한다. 이후 release 브랜치 sync 절차는 CLAUDE.md "배포" 섹션을 그대로 따른다(별도 절차 신설 금지)
   - 검증 조건:
-    - 결과: master HEAD에 5개 플랫폼 바이너리가 커밋되어 있고 release 브랜치가 master의 v0.3.0 변경을 포함한다. GitHub default branch가 `release`로 남아있다
-    - 확인: `ls bin/cc-usage-*` 5개 확인, `git log` / `git branch -a` 로 master·release 동기화 상태 확인, GitHub repo settings에서 default branch 확인
+    - 결과: main HEAD에 5개 플랫폼 바이너리가 커밋되어 있고 release 브랜치가 main의 v0.3.0 변경을 포함한다. GitHub default branch가 `release`로 남아있다
+    - 확인: `ls bin/cc-usage-*` 5개 확인, `git log` / `git branch -a` 로 main·release 동기화 상태 확인, GitHub repo settings에서 default branch 확인
   - 참조: SPEC §5.4, SPEC §5.10

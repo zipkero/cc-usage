@@ -6,7 +6,7 @@ Claude Code status line plugin. 모델, 컨텍스트 사용량, 비용, rate lim
 my-project (main) │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25 │ 5h: 42% │ 7d: 69%
 ```
 
-> **브랜치 안내**: 이 `master` 브랜치는 소스 코드와 개발 환경입니다. 마켓플레이스 배포는 [`release` 브랜치](https://github.com/zipkero/cc-usage/tree/release)(GitHub default)에서 이뤄지며 미리 빌드된 바이너리만 포함합니다. 단순 설치만 원한다면 아래 *Plugin Marketplace* 또는 release 브랜치의 README를 참고하세요.
+> **브랜치 안내**: 이 `main` 브랜치는 소스 코드와 개발 환경입니다. 마켓플레이스 배포는 [`release` 브랜치](https://github.com/zipkero/cc-usage/tree/release)(GitHub default)에서 이뤄지며 미리 빌드된 바이너리만 포함합니다. 단순 설치만 원한다면 아래 *Plugin Marketplace* 또는 release 브랜치의 README를 참고하세요.
 
 ## Features
 
@@ -45,10 +45,10 @@ my-project (main) │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25 �
 
 ### Manual (소스 빌드)
 
-이 `master` 브랜치를 클론하고 직접 빌드한 뒤 settings에 등록한다. Go 1.20+ 필요.
+이 `main` 브랜치를 클론하고 직접 빌드한 뒤 settings에 등록한다. Go 1.20+ 필요.
 
 ```bash
-git clone --branch master https://github.com/zipkero/cc-usage.git
+git clone --branch main https://github.com/zipkero/cc-usage.git
 cd cc-usage
 make build-local   # dist/cc-usage 생성
 ```

@@ -138,7 +138,7 @@ DEBUG=cc-usage ./dist/cc-usage <<< '{...}'   # 또는 DEBUG=1
 
 | 브랜치 | 용도 | 내용 |
 |--------|------|------|
-| `master` | 개발 + 소스 | 전체 소스, 설계 문서, Makefile, 테스트 |
+| `main` | 개발 + 소스 | 전체 소스, 설계 문서, Makefile, 테스트 |
 | `release` | marketplace 배포 (**GitHub default**) | `bin/`, `.claude-plugin/`, `skills/`, `README.md`, `LICENSE` — 소스 없음 (orphan 브랜치) |
 
 `/plugin install cc-usage`는 GitHub default branch를 clone하므로 사용자는 `release`만 받는다.
@@ -153,11 +153,11 @@ DEBUG=cc-usage ./dist/cc-usage <<< '{...}'   # 또는 DEBUG=1
 
 ### 릴리스 절차 (bin/ 갱신 시)
 
-`make build`로 `bin/`을 다시 만든 뒤, master에 commit하고 release 브랜치에도 반영해야 한다.
-orphan 브랜치라서 master와 머지하지 않고 **파일을 복사해 새 commit**으로 쌓는다.
+`make build`로 `bin/`을 다시 만든 뒤, main에 commit하고 release 브랜치에도 반영해야 한다.
+orphan 브랜치라서 main과 머지하지 않고 **파일을 복사해 새 commit**으로 쌓는다.
 
 ```bash
-# 1) master에서 bin/ 갱신
+# 1) main에서 bin/ 갱신
 make build
 git add bin/ && git commit -m "build: rebuild binaries vX.Y.Z"
 
@@ -169,7 +169,7 @@ cp -R bin .claude-plugin skills LICENSE "$TMPWT/"
 
 # 3) commit + push
 git -C "$TMPWT" add -A
-git -C "$TMPWT" commit -m "release: sync from master @ <sha>"
+git -C "$TMPWT" commit -m "release: sync from main @ <sha>"
 git -C "$TMPWT" push origin release
 
 # 4) cleanup
