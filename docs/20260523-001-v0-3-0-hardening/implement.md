@@ -46,7 +46,7 @@
 
 ## Section: Config 검증 · Dead state 제거
 
-- [ ] task-005: `api.go`의 `memCache` / `negativeCache` 제거
+- [x] task-005: `api.go`의 `memCache` / `negativeCache` 제거
   - 목적: status line 동작은 변경 없이 단일-shot CLI에서 동작하지 않는 in-process 캐시 변수와 분기가 소스에서 사라진다
   - 접근: `api.go`의 package-level `memCache` / `negativeCache` map 선언과 `fetchUsageLimits` / `staleFallback`의 해당 분기·guard 코드를 모두 제거. `fetchUsageLimits` 시그니처는 유지하고 file cache 경로만 남긴다
   - 검증 조건:

@@ -47,17 +47,11 @@ type apiUsageResponse struct {
 	} `json:"seven_day_sonnet"`
 }
 
-// cacheEntry is stored in both memory and file caches (success only).
+// cacheEntry is stored in the file cache (success only).
 type cacheEntry struct {
 	Data      *apiUsageResponse `json:"data"`
 	Timestamp time.Time         `json:"timestamp"`
 }
-
-// memCache holds successful API responses keyed by token hash.
-var memCache = map[string]*cacheEntry{}
-
-// negativeCache tracks recent API failures (memory only, not persisted to file).
-var negativeCache = map[string]time.Time{}
 
 // lastCleanup tracks when old cache files were last purged.
 var lastCleanup time.Time
@@ -66,7 +60,6 @@ const (
 	apiURL           = "https://api.anthropic.com/api/oauth/usage"
 	userAgent        = "cc-usage/0.2.0"
 	apiBeta          = "oauth-2025-04-20"
-	negativeCacheTTL = 30 * time.Second
 	staleCacheMaxAge = time.Hour
 	apiTimeout       = 2 * time.Second
 )
@@ -77,7 +70,9 @@ func hashToken(token string) string {
 	return hex.EncodeToString(h[:])[:16]
 }
 
-// fetchUsageLimits retrieves usage limits using a 3-tier cache (memory → file → API).
+// fetchUsageLimits retrieves usage limits using file cache → API.
+// cc-usage is fork-exec'd per status line invocation, so any in-process cache
+// never survives across calls; the file cache is the only cross-invocation tier.
 func fetchUsageLimits(token string, cacheCfg CacheConfig) *UsageLimits {
 	if token == "" {
 		return nil
@@ -87,54 +82,32 @@ func fetchUsageLimits(token string, cacheCfg CacheConfig) *UsageLimits {
 	now := time.Now()
 	ttl := time.Duration(cacheCfg.TTLSeconds) * time.Second
 
-	// Negative cache guard: recent failure → skip API, return stale if available
-	if failedAt, ok := negativeCache[hash]; ok && now.Sub(failedAt) < negativeCacheTTL {
-		debugLog("api", "negative cache hit, skipping API call")
-		return staleFallback(hash, now)
-	}
-
-	// 1. Memory cache
-	if entry, ok := memCache[hash]; ok && now.Sub(entry.Timestamp) < ttl {
-		debugLog("api", "memory cache hit (age=%v)", now.Sub(entry.Timestamp))
-		return parseUsageLimits(entry.Data)
-	}
-
-	// 2. File cache
+	// 1. File cache
 	if entry := readFileCache(hash); entry != nil && now.Sub(entry.Timestamp) < ttl {
 		debugLog("api", "file cache hit (age=%v)", now.Sub(entry.Timestamp))
-		memCache[hash] = entry
 		return parseUsageLimits(entry.Data)
 	}
 
-	// 3. API call
+	// 2. API call
 	go cleanOldCaches()
 
 	resp, err := callAPI(token)
 	if err != nil {
 		debugLog("api", "API call failed: %v", err)
-		negativeCache[hash] = now
 		return staleFallback(hash, now)
 	}
 
-	// Success: update caches
+	// Success: update file cache
 	entry := &cacheEntry{Data: resp, Timestamp: now}
-	memCache[hash] = entry
 	writeFileCache(hash, entry)
 	debugLog("api", "API call succeeded, cached")
 	return parseUsageLimits(resp)
 }
 
-// staleFallback returns stale cache data (up to 1 hour old) or nil.
+// staleFallback returns stale file cache data (up to 1 hour old) or nil.
 func staleFallback(hash string, now time.Time) *UsageLimits {
-	// Check memory
-	if entry, ok := memCache[hash]; ok && now.Sub(entry.Timestamp) < staleCacheMaxAge {
-		debugLog("api", "using stale memory cache (age=%v)", now.Sub(entry.Timestamp))
-		return parseUsageLimits(entry.Data)
-	}
-	// Check file
 	if entry := readFileCache(hash); entry != nil && now.Sub(entry.Timestamp) < staleCacheMaxAge {
 		debugLog("api", "using stale file cache (age=%v)", now.Sub(entry.Timestamp))
-		memCache[hash] = entry
 		return parseUsageLimits(entry.Data)
 	}
 	return nil
