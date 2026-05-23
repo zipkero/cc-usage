@@ -62,7 +62,7 @@
     - 확인: `rg -n 'DailyBudget|\.Plan\b' *.go` 0건 확인. 수동 stdin 테스트로 stderr 비어있음 확인
   - 참조: SPEC §5.7, SPEC §5.9, ANALYSIS §2.5
 
-- [ ] task-007: `Translations`의 미사용 라벨 3종 및 locales JSON 키 제거
+- [x] task-007: `Translations`의 미사용 라벨 3종 및 locales JSON 키 제거
   - 목적: 위젯 코드가 참조하지 않는 i18n 라벨이 소스와 locales에서 사라지며, 기존 정상 위젯 렌더는 영향받지 않는다
   - 접근: `widget.go`의 `Translations` struct에서 `Errors.NoContext`, `Labels.OneM`, `Labels.SevenDAll` 필드를 제거. `locales/en.json`, `locales/ko.json`에서 대응 키를 제거한다
   - 검증 조건:

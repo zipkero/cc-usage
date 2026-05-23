@@ -1,8 +1,7 @@
 {
   "model": { "opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku" },
-  "labels": { "fiveH": "5시간", "sevenD": "7일", "sevenDAll": "7일전체", "sevenDSonnet": "7일-S", "oneM": "1분" },
+  "labels": { "fiveH": "5시간", "sevenD": "7일", "sevenDSonnet": "7일-S" },
   "time": { "days": "일", "hours": "시간", "minutes": "분", "seconds": "초" },
-  "errors": { "noContext": "컨텍스트 없음" },
   "widgets": {
     "apiDuration": "API",
     "burnRate": "소비",

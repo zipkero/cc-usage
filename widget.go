@@ -23,9 +23,7 @@ type Translations struct {
 	Labels struct {
 		FiveH        string `json:"fiveH"`
 		SevenD       string `json:"sevenD"`
-		SevenDAll    string `json:"sevenDAll"`
 		SevenDSonnet string `json:"sevenDSonnet"`
-		OneM         string `json:"oneM"`
 	} `json:"labels"`
 	Time struct {
 		Days    string `json:"days"`
@@ -33,9 +31,6 @@ type Translations struct {
 		Minutes string `json:"minutes"`
 		Seconds string `json:"seconds"`
 	} `json:"time"`
-	Errors struct {
-		NoContext string `json:"noContext"`
-	} `json:"errors"`
 	Widgets struct {
 		ApiDuration string `json:"apiDuration"`
 		BurnRate    string `json:"burnRate"`
