@@ -52,7 +52,7 @@ func main() {
 	debugLog("main", "configPath=%s configDir=%s", *configPath, configDir)
 
 	cfg := loadConfig(*configPath)
-	debugLog("main", "config loaded: language=%s plan=%s displayMode=%s", cfg.Language, cfg.Plan, cfg.DisplayMode)
+	debugLog("main", "config loaded: language=%s displayMode=%s", cfg.Language, cfg.DisplayMode)
 
 	input := parseStdin()
 	debugLog("main", "stdin parsed: model=%s version=%s", input.Model.ID, input.Version)

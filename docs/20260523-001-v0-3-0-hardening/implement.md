@@ -54,7 +54,7 @@
     - 확인: `rg -n 'memCache|negativeCache' *.go` 0건 확인. 기존 stdin 샘플로 렌더 결과가 v0.2.0 출력과 동일한지 수동 비교
   - 참조: SPEC §5.9, ANALYSIS §2.5
 
-- [ ] task-006: `Config.DailyBudget` / `Config.Plan` 및 관련 잔존 참조 제거
+- [x] task-006: `Config.DailyBudget` / `Config.Plan` 및 관련 잔존 참조 제거
   - 목적: v0.2.0 cc-usage.json(특히 `dailyBudget`, `plan` 필드를 포함한 것)을 v0.3.0이 입력으로 받아도 status line이 정상 렌더되고 stderr에 관련 경고가 출력되지 않으며, 해당 식별자는 소스에 남지 않는다
   - 접근: `config.go`에서 `Config` struct의 `DailyBudget`, `Plan` 필드 선언과 default 채움 코드를 제거. `main.go:49` 부근의 `Plan`을 참조하는 debugLog format을 함께 제거한다. JSON unmarshal은 `DisallowUnknownFields`를 쓰지 않으므로 v0.2.0 입력의 해당 필드는 silent ignore된다
   - 검증 조건:

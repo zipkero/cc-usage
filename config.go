@@ -13,14 +13,12 @@ type CacheConfig struct {
 // Config represents the user configuration from cc-usage.json.
 type Config struct {
 	Language        string      `json:"language"`
-	Plan            string      `json:"plan"`
 	DisplayMode     string      `json:"displayMode"`
 	Lines           [][]string  `json:"lines,omitempty"`
 	DisabledWidgets []string    `json:"disabledWidgets,omitempty"`
 	Theme           string      `json:"theme,omitempty"`
 	Separator       string      `json:"separator,omitempty"`
 	Preset          string      `json:"preset,omitempty"`
-	DailyBudget     *float64    `json:"dailyBudget,omitempty"`
 	Cache           CacheConfig `json:"cache"`
 }
 
@@ -28,7 +26,6 @@ type Config struct {
 func defaultConfig() Config {
 	return Config{
 		Language:    "auto",
-		Plan:        "max",
 		DisplayMode: "compact",
 		Cache:       CacheConfig{TTLSeconds: 300},
 	}
@@ -62,9 +59,6 @@ func loadConfig(path string) Config {
 	// Merge: fill zero-value fields with defaults
 	if cfg.Language == "" {
 		cfg.Language = defaults.Language
-	}
-	if cfg.Plan == "" {
-		cfg.Plan = defaults.Plan
 	}
 	if cfg.DisplayMode == "" {
 		cfg.DisplayMode = defaults.DisplayMode
