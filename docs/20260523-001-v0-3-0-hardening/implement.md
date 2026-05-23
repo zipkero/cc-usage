@@ -36,7 +36,7 @@
     - 확인: 로컬 빌드 후 `./dist/cc-usage --version` 실행하여 출력·exit code 확인
   - 참조: SPEC §5.3, ANALYSIS §2.1
 
-- [ ] task-004: Makefile `VERSION` 0.3.0 및 `linux/arm64` 빌드 타깃 추가
+- [x] task-004: Makefile `VERSION` 0.3.0 및 `linux/arm64` 빌드 타깃 추가
   - 목적: cross-build 산출물이 `0.3.0` 버전 문자열을 ldflags로 받고, 5개 플랫폼(darwin/{arm64,amd64}, linux/{amd64,arm64}, windows/amd64) 바이너리가 생성된다
   - 접근: `Makefile`의 `VERSION := 0.2.0`을 `0.3.0`으로 갱신하고, `PLATFORMS` 변수에 `linux/arm64`를 추가한다. `bin/run.sh`는 이미 `uname -m`에서 `aarch64|arm64`를 `arm64`로 정규화하고 `bin/cc-usage-${OS}-${ARCH}`로 분기하므로 무수정
   - 검증 조건:
