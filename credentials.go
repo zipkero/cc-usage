@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -8,6 +9,12 @@ import (
 	"runtime"
 	"time"
 )
+
+// keychainLookupTimeout caps the `security` invocation so a locked Keychain
+// (which can pop a GUI prompt and block indefinitely) cannot stall the status
+// line beyond the SPEC §5.1 1s budget. On timeout the call falls through to
+// the existing backoff branch.
+const keychainLookupTimeout = 500 * time.Millisecond
 
 // credentialsFile represents the JSON structure of .credentials.json.
 type credentialsFile struct {
@@ -55,7 +62,9 @@ func getCredentialFromKeychain() string {
 		return keychainToken
 	}
 
-	cmd := exec.Command("security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
+	ctx, cancel := context.WithTimeout(context.Background(), keychainLookupTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
 	out, err := cmd.Output()
 	if err != nil {
 		debugLog("credentials", "keychain lookup failed: %v", err)

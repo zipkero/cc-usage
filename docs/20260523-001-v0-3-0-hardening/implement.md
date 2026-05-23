@@ -2,7 +2,7 @@
 
 ## Section: 외부 명령 안전성
 
-- [ ] task-001: Keychain `security` 호출 timeout 적용
+- [x] task-001: Keychain `security` 호출 timeout 적용
   - 목적: macOS Keychain이 잠겨 GUI prompt를 띄우는 상황에서도 status line stdout이 1초 이내에 완료되고, 첫 실패 이후 호출은 file fallback으로 즉시 분기한다
   - 접근: `credentials.go`의 `getCredentialFromKeychain`에서 `exec.Command`를 `exec.CommandContext(ctx, ...)`로 교체하고 `context.WithTimeout(parent, 500ms)`를 적용. timeout 또는 오류 시 기존 `keychainBackoffUntil = now + 60s` 분기로 흘러보낸다
   - 검증 조건:
