@@ -119,6 +119,21 @@ emitter: `fmt.Fprintln(os.Stderr, ...)` 직접. `debugLog`는 DEBUG env 의존�
 
 SPEC §5.8 최소 3개 vs 실제 7개. stderr 캡처: `os.Pipe`로 `os.Stderr` 교체 후 복원하는 헬퍼를 `config_test.go` 내부에.
 
+### 2.8 API 응답 `utilization` 타입 호환성 (SPEC §5.11)
+
+현재 `apiUsageResponse`의 세 필드 모두 `Utilization int`로 선언되어 있다. API가 `12.0` 같은 부동소수점 표현으로 응답하면 `encoding/json`이 int 필드로 decode 실패한다(전체 응답 unmarshal 자체가 깨짐 → 모든 rate limit 위젯이 placeholder로 떨어짐).
+
+`origin/main`에 분리되어 있던 별도 작업 라인의 `bcc7135` 커밋이 같은 버그를 식별·수정했다. 본 spec에서 그 수정을 채택한다. 변경 범위:
+
+```diff
+-Utilization int     `json:"utilization"`
++Utilization float64 `json:"utilization"`
+```
+
+`parseEntry` 시그니처를 `parseEntry(utilization float64, resetsAt string)`로 변경하고, 내부에서 `clampPercent(utilization)`으로 0~100 정수로 클램프해서 `UsageLimitEntry.Utilization` (int 유지)에 대입한다. 도메인 타입(`UsageLimitEntry`)은 그대로 두고 wire format 디코딩 경로에서만 float을 허용하는 형태.
+
+회귀 방지: `api_test.go` 신규. `TestDecodeAPIResponseAcceptsDecimalUtilization`이 `{"utilization": 12.0}`, `{"utilization": 34.5}`, `{"utilization": 101.0}` 세 케이스로 decode + clamp 동작을 확인한다.
+
 ## 3. 인터페이스
 
 ### 추가

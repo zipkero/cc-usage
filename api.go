@@ -29,18 +29,21 @@ type UsageLimits struct {
 }
 
 // apiUsageResponse is the JSON shape returned by the usage API.
+// Utilization is decoded as float64 because the API may return decimals
+// (e.g. 12.5). The domain type UsageLimitEntry.Utilization stays int —
+// parseEntry clamps to 0..100 before crossing the wire-to-domain boundary.
 type apiUsageResponse struct {
 	FiveHour struct {
-		Utilization int    `json:"utilization"`
-		ResetsAt    string `json:"resets_at"`
+		Utilization float64 `json:"utilization"`
+		ResetsAt    string  `json:"resets_at"`
 	} `json:"five_hour"`
 	SevenDay struct {
-		Utilization int    `json:"utilization"`
-		ResetsAt    string `json:"resets_at"`
+		Utilization float64 `json:"utilization"`
+		ResetsAt    string  `json:"resets_at"`
 	} `json:"seven_day"`
 	SevenDaySonnet struct {
-		Utilization int    `json:"utilization"`
-		ResetsAt    string `json:"resets_at"`
+		Utilization float64 `json:"utilization"`
+		ResetsAt    string  `json:"resets_at"`
 	} `json:"seven_day_sonnet"`
 }
 
@@ -315,16 +318,19 @@ func parseUsageLimits(resp *apiUsageResponse) *UsageLimits {
 }
 
 // parseEntry parses a single utilization/resets_at pair into a UsageLimitEntry.
-func parseEntry(utilization int, resetsAt string) *UsageLimitEntry {
+// Clamps utilization to a 0..100 integer at the wire boundary so widgets can
+// keep treating it as int.
+func parseEntry(utilization float64, resetsAt string) *UsageLimitEntry {
+	percent := clampPercent(utilization)
 	if resetsAt == "" {
-		return &UsageLimitEntry{Utilization: utilization}
+		return &UsageLimitEntry{Utilization: percent}
 	}
 	t, err := time.Parse(time.RFC3339, resetsAt)
 	if err != nil {
 		debugLog("api", "parse resets_at failed: %v", err)
-		return &UsageLimitEntry{Utilization: utilization}
+		return &UsageLimitEntry{Utilization: percent}
 	}
-	return &UsageLimitEntry{Utilization: utilization, ResetsAt: t}
+	return &UsageLimitEntry{Utilization: percent, ResetsAt: t}
 }
 
 // cleanOldCaches removes cache files older than 1 hour. Fire-and-forget.

@@ -17,3 +17,4 @@ cc-usage v0.2.0 운영 중 식별된 외부 명령 stall 위험, dead code, 광�
 - 2026-05-23: SPEC 작성
 - 2026-05-23: ANALYSIS 작성
 - 2026-05-23: IMPLEMENT 체크리스트 작성
+- 2026-05-23: SPEC §5.11 + ANALYSIS §2.8 + task-012 추가 (origin/main의 utilization float 호환 fix 도입)

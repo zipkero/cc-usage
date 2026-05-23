@@ -18,6 +18,14 @@
     - 확인: 수동 테스트(예: 무응답 endpoint로 분기) + 코드 diff에서 `apiTimeout = 2 * time.Second` 확인
   - 참조: SPEC §5.2, ANALYSIS §2.3
 
+- [ ] task-012: API utilization 응답 float 호환
+  - 목적: Anthropic Usage API가 `utilization`을 `12.0` 같은 부동소수점으로 보내도 cc-usage가 decode 실패 없이 rate limit 위젯을 0~100 사이로 클램핑된 정수 퍼센트로 렌더한다
+  - 접근: `api.go`의 `apiUsageResponse.{FiveHour,SevenDay,SevenDaySonnet}.Utilization`을 `int → float64`로 변경. `parseEntry` 시그니처를 `parseEntry(utilization float64, ...)`로 바꾸고 내부에서 `clampPercent(utilization)`로 정수 변환해 `UsageLimitEntry.Utilization` (int 유지)에 대입. 회귀 방지용 `api_test.go` 신규 생성, `TestDecodeAPIResponseAcceptsDecimalUtilization`이 `12.0`/`34.5`/`101.0` decode + clamp를 확인
+  - 검증 조건:
+    - 결과: `{"utilization": 12.5}` JSON 입력이 decode 성공하고 위젯이 `12%` (또는 클램핑된 정수)로 렌더. `101.0`은 `100%`로 클램프
+    - 확인: `go test -run TestDecodeAPIResponseAcceptsDecimalUtilization` 통과 + 기존 테스트 전체 PASS
+  - 참조: SPEC §5.11, ANALYSIS §2.8
+
 ## Section: CLI · 빌드 외연
 
 - [ ] task-003: `--version` 플래그 추가
