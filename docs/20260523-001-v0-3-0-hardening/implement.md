@@ -10,7 +10,7 @@
     - 확인: 수동으로 Keychain 잠금 상태에서 `cc-usage` 실행 후 stdout 응답 시간 측정. 코드 diff에서 `exec.CommandContext` + 500ms timeout 적용 확인
   - 참조: SPEC §5.1, ANALYSIS §2.2
 
-- [ ] task-002: Anthropic Usage API timeout 단축
+- [x] task-002: Anthropic Usage API timeout 단축
   - 목적: API endpoint가 응답을 보내지 않는 상황에서도 status line stdout이 3초 이내에 출력되며, 출력에는 stale 캐시 값 또는 placeholder가 포함된다
   - 접근: `api.go`의 `apiTimeout` 상수를 `10 * time.Second`에서 `2 * time.Second`로 단축. HTTP client와 curl fallback 양쪽이 같은 상수를 참조하므로 1곳 수정으로 전파된다. negativeCache / staleFallback 경로는 그대로 둔다(단, task-005에서 in-process 부분은 제거 예정)
   - 검증 조건:

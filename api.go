@@ -68,7 +68,7 @@ const (
 	apiBeta          = "oauth-2025-04-20"
 	negativeCacheTTL = 30 * time.Second
 	staleCacheMaxAge = time.Hour
-	apiTimeout       = 10 * time.Second
+	apiTimeout       = 2 * time.Second
 )
 
 // hashToken returns a short hex prefix of the SHA-256 of the token.
