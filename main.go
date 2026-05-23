@@ -32,7 +32,13 @@ func defaultConfigPath() string {
 
 func main() {
 	configPath := flag.String("config", defaultConfigPath(), "config path")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	// Determine configDir
 	var configDir string

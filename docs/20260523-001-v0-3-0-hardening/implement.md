@@ -28,7 +28,7 @@
 
 ## Section: CLI · 빌드 외연
 
-- [ ] task-003: `--version` 플래그 추가
+- [x] task-003: `--version` 플래그 추가
   - 목적: `cc-usage --version` 실행 시 stdout에 버전 문자열 한 줄만 출력하고 exit 0으로 종료한다
   - 접근: `main.go`에서 `flag.Bool("version", false, ...)`를 등록하고, `flag.Parse()` 직후 stdin·config·credential 진입 전에 early-exit. 출력은 ldflags 주입 `version` 변수를 `fmt.Println`
   - 검증 조건:
