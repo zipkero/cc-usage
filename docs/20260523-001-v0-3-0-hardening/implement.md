@@ -88,7 +88,7 @@
     - 확인: `go test ./... -run 'ResolvePreset|BurnRateGetData|SessionDurationGetData'` 통과
   - 참조: SPEC §5.8, ANALYSIS §2.7
 
-- [ ] task-010: `config_test.go` 신규 — loadConfig 머지 / v0.2.0 호환 / enum 경고
+- [x] task-010: `config_test.go` 신규 — loadConfig 머지 / v0.2.0 호환 / enum 경고
   - 목적: config 머지·v0.2.0 호환·enum 검증 경로가 다음 릴리스에서 깨지면 `go test ./...`가 즉시 감지한다
   - 접근: `config_test.go`를 신규 생성하여 다음 케이스를 추가한다 — `TestLoadConfigMergesDefaults`(기본값 머지), `TestLoadConfigAcceptsV020Fields`(`{"dailyBudget":5.0,"plan":"max","language":"ko"}` 입력 시 stderr에 `dailyBudget`/`plan` 미포함, cfg.Language == "ko"), `TestLoadConfigWarnsOnUnknownEnum`(`{"displayMode":"bogus"}` 입력 시 stderr에 `displayMode` 식별자 포함, cfg.DisplayMode == "compact"). stderr 캡처는 `os.Pipe`로 `os.Stderr`를 교체했다가 복원하는 헬퍼를 같은 파일 안에 둔다
   - 검증 조건:
