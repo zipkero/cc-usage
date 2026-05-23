@@ -1,0 +1,165 @@
+# cc-usage
+
+Claude Code status line plugin. 모델, 컨텍스트 사용량, 비용, rate limit 등을 status line에 표시한다.
+
+```
+my-project (main) │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25 │ 5h: 42% │ 7d: 69%
+```
+
+> 이 브랜치는 marketplace 배포용 pre-built 바이너리만 포함합니다. **소스 코드와 빌드 환경은 [`master` 브랜치](https://github.com/zipkero/cc-usage/tree/master)에 있습니다.**
+
+## Features
+
+- Zero dependency (Go 표준 라이브러리만 사용)
+- 크로스 플랫폼 (macOS arm64/amd64, Linux amd64, Windows amd64)
+- 모듈러 위젯 시스템
+- 8개 컬러 테마 (default, minimal, catppuccin, dracula, gruvbox, nord, tokyoNight, solarized)
+- 다국어 지원 (English, 한국어)
+- Display mode: compact, normal, detailed, custom
+
+## Installation
+
+### Plugin Marketplace (권장)
+
+```bash
+# 1. marketplace 등록
+/plugin marketplace add zipkero/cc-usage
+
+# 2. 플러그인 설치
+/plugin install cc-usage
+
+# 3. status line 설정 적용
+/cc-usage:cc-usage-install
+
+# 4. 적용
+/reload-plugins
+```
+
+### Manual
+
+미리 빌드된 바이너리를 받아서 `~/.claude/settings.json`에 등록합니다.
+
+```bash
+git clone --branch release --depth 1 https://github.com/zipkero/cc-usage.git
+cd cc-usage
+chmod +x bin/run.sh bin/cc-usage-*   # macOS / Linux 만 해당
+```
+
+**macOS / Linux** — `bin/run.sh`가 OS/arch를 자동 감지합니다.
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/path/to/cc-usage/bin/run.sh"
+  }
+}
+```
+
+**Windows** — `run.sh`는 Git Bash가 필요하므로, cmd/PowerShell 환경에서는 `.exe`를 직접 지정합니다. 경로는 forward slash 사용.
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "C:/path/to/cc-usage/bin/cc-usage-windows-amd64.exe"
+  }
+}
+```
+
+> Git Bash / WSL 환경이라면 Windows에서도 `bin/run.sh`를 그대로 사용할 수 있습니다.
+
+커스텀 프로필 사용 시 `--config` 인자 추가:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/path/to/cc-usage/bin/run.sh --config ~/.claude-triptopaz/cc-usage.json"
+  }
+}
+```
+
+## Configuration
+
+설정 파일: `~/.claude/cc-usage.json` (또는 `--config`로 지정)
+
+```json
+{
+  "language": "auto",
+  "plan": "max",
+  "displayMode": "compact",
+  "theme": "default",
+  "separator": "pipe",
+  "dailyBudget": 10.0,
+  "disabledWidgets": [],
+  "cache": { "ttlSeconds": 300 }
+}
+```
+
+| 필드 | 기본값 | 설명 |
+|------|--------|------|
+| `language` | `"auto"` | `"auto"`, `"en"`, `"ko"` |
+| `plan` | `"max"` | `"pro"`, `"max"` |
+| `displayMode` | `"compact"` | `"compact"`, `"normal"`, `"detailed"`, `"custom"` |
+| `theme` | `"default"` | 8개 테마 중 선택 |
+| `separator` | `"pipe"` | `"pipe"`, `"space"`, `"dot"`, `"arrow"` |
+| `dailyBudget` | - | 일일 예산 (USD) |
+| `disabledWidgets` | `[]` | 비활성화할 위젯 ID 목록 |
+| `preset` | - | 위젯 단축 문자열 (예: `"MC$R\|BD"`) |
+
+## Widgets
+
+### Core
+
+| ID | 설명 |
+|----|------|
+| `model` | 모델명 + 아이콘 (◆Opus/◇Sonnet/○Haiku) |
+| `context` | 프로그레스바 + 사용률 + 토큰 수 |
+| `cost` | 세션 비용 |
+| `rateLimit5h` | 5시간 rate limit |
+| `rateLimit7d` | 7일 rate limit |
+| `rateLimit7dSonnet` | 7일 Sonnet rate limit |
+| `projectInfo` | 디렉토리 + git branch |
+
+### Analytics (normal/detailed mode)
+
+`sessionDuration`, `burnRate`, `cacheHit`, `tokenSpeed`, `todoProgress`, `toolActivity`, `agentStatus`, `configCounts`, `performance`, `tokenBreakdown`, `forecast`, `budget`, `todayCost`, `linesChanged`, `outputStyle`, `version`, `peakHours` 등
+
+## Troubleshooting
+
+### Idle 시 `projectInfo`가 가끔 사라지는 경우
+
+Claude Code는 주기적으로 status line을 갱신하지 않고 이벤트 기반으로만 호출한다. Idle 상태에서 `workspace.current_dir`가 비어있는 stdin이 오면 `projectInfo` 위젯이 생략될 수 있다.
+
+이를 완화하기 위해 직전 렌더의 workspace/worktree를 로컬 세션 캐시(`~/.cache/cc-usage/session-state-*.json`)에서 복원한다. 단, **30초 이내**의 캐시만 사용한다 — 사용자가 `cd`로 디렉터리를 옮긴 뒤 긴 idle이 발생했을 때 이전 경로가 고착되는 것을 막기 위함이다. 30초를 초과한 idle에서는 복원하지 않고 위젯을 생략한다.
+
+### 플러그인 업데이트 시 SSH 인증 오류 (Windows)
+
+```
+git@github.com: Permission denied (publickey).
+fatal: Could not read from remote repository.
+```
+
+플러그인 업데이트 과정에서 SSH URL로 clone을 시도하면서 발생할 수 있다. git 글로벌 설정으로 SSH를 HTTPS로 우회하면 해결된다.
+
+```bash
+git config --global url."https://github.com/".insteadOf "git@github.com:"
+```
+
+## Privacy
+
+cc-usage는 외부 서버로 데이터를 전송하지 않는다.
+
+- **입력**: Claude Code가 stdin으로 넘겨주는 세션 정보(model, context, cost, workspace path 등)만 읽는다.
+- **네트워크**: OAuth 토큰(`~/.claude/.credentials.json`)으로 Anthropic 공식 API(`api.anthropic.com`)만 호출하여 rate limit을 조회한다. 제3자 서버나 애널리틱스는 사용하지 않는다.
+- **저장**: `~/.cache/cc-usage/`에 rate limit 응답과 세션 스냅샷을 로컬 캐시한다. 사용자가 직접 삭제할 수 있다.
+- **텔레메트리**: 없음.
+
+## Development
+
+소스 코드, 빌드 스크립트, 설계 문서는 [`master` 브랜치](https://github.com/zipkero/cc-usage/tree/master)에서 확인하세요.
+
+## License
+
+MIT

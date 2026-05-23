@@ -1,0 +1,18 @@
+{
+  "name": "zipkero-cc-usage",
+  "description": "Claude Code status line plugin marketplace",
+  "owner": {
+    "name": "zipkero"
+  },
+  "plugins": [
+    {
+      "name": "cc-usage",
+      "source": {
+        "source": "github",
+        "repo": "zipkero/cc-usage"
+      },
+      "description": "Claude Code status line plugin - shows model, context, cost, rate limits, and more",
+      "category": "productivity"
+    }
+  ]
+}
