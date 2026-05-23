@@ -21,6 +21,8 @@ widget.go          : Widget 인터페이스 + registry + displayPresets + preset
                      + orchestrate(): 라인별로 GetData/Render 후 separator 조인
 widgets_core.go    : model, context, cost, rateLimit{5h,7d,7dSonnet} 위젯
 widgets_project.go : projectInfo 위젯 (git porcelain=v2로 branch + ahead/behind)
+widgets_analytics.go : version, apiDuration, sessionDuration, burnRate, cacheHit, performance
+                       — stdin의 cost.* / context_window.current_usage.* / version에서만 파생
 render.go          : theme, separator, progress bar, ANSI 코드
 format.go          : 토큰/비용/시간/퍼센트 포맷터
 credentials.go     : OAuth 토큰 — macOS Keychain 우선, 실패 시 {configDir}/.credentials.json
@@ -61,8 +63,11 @@ Claude Code는 idle/reload 직후 종종 workspace나 사용량이 비어있는 
 - 새 위젯은 widget 종류에 따라:
   - **Core** (모델/컨텍스트/비용/rate limit): `widgets_core.go`
   - **Project**: `widgets_project.go`
-  - 그 외 analytics 계열은 **현재 미구현**. 추가 시 `widgets_analytics.go`를 신설하고
-    파일 분리는 DESIGN.md "프로젝트 구조"를 따른다.
+  - **Analytics** (stdin payload 산술/표시): `widgets_analytics.go`
+- stdin payload에 데이터가 실제로 들어오는지 먼저 확인할 것 (`~/.cache/cc-usage/session-state-*.json`이 실측 샘플).
+  struct 필드가 있다고 항상 채워지는 건 아니다 — 예: `worktree`, `vim`, `agent`, `remote`는 일반적으로 비어있음.
+- 또한 `context_window.total_output_tokens`는 **세션 누적이 아니라 현재 턴 output**이다
+  (`current_usage.output_tokens`와 항상 일치). 누적 output token 기반 계산(예: 평균 tok/s)은 불가능.
 
 ## 빌드 / 테스트
 

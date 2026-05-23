@@ -4,10 +4,10 @@
   "time": { "days": "d", "hours": "h", "minutes": "m", "seconds": "s" },
   "errors": { "noContext": "No context" },
   "widgets": {
-    "tools": "Tools", "done": "done", "running": "running", "agent": "Agent", "todos": "Todos",
-    "claudeMd": "CLAUDE.md", "agentsMd": "Agents", "addedDirs": "Dirs", "rules": "Rules", "mcps": "MCPs", "hooks": "Hooks",
-    "burnRate": "Burn", "cache": "Cache", "toLimit": "To limit", "forecast": "Forecast", "budget": "Budget",
-    "performance": "Perf", "tokenBreakdown": "Tokens", "todayCost": "Today",
-    "apiDuration": "API", "peakHours": "Peak", "offPeak": "Off-Peak"
+    "apiDuration": "API",
+    "burnRate": "Burn",
+    "cache": "Cache",
+    "performance": "Perf",
+    "session": "Session"
   }
 }

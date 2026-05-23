@@ -37,28 +37,11 @@ type Translations struct {
 		NoContext string `json:"noContext"`
 	} `json:"errors"`
 	Widgets struct {
-		Tools          string `json:"tools"`
-		Done           string `json:"done"`
-		Running        string `json:"running"`
-		Agent          string `json:"agent"`
-		Todos          string `json:"todos"`
-		ClaudeMd       string `json:"claudeMd"`
-		AgentsMd       string `json:"agentsMd"`
-		AddedDirs      string `json:"addedDirs"`
-		Rules          string `json:"rules"`
-		Mcps           string `json:"mcps"`
-		Hooks          string `json:"hooks"`
-		BurnRate       string `json:"burnRate"`
-		Cache          string `json:"cache"`
-		ToLimit        string `json:"toLimit"`
-		Forecast       string `json:"forecast"`
-		Budget         string `json:"budget"`
-		Performance    string `json:"performance"`
-		TokenBreakdown string `json:"tokenBreakdown"`
-		TodayCost      string `json:"todayCost"`
-		ApiDuration    string `json:"apiDuration"`
-		PeakHours      string `json:"peakHours"`
-		OffPeak        string `json:"offPeak"`
+		ApiDuration string `json:"apiDuration"`
+		BurnRate    string `json:"burnRate"`
+		Cache       string `json:"cache"`
+		Performance string `json:"performance"`
+		Session     string `json:"session"`
 	} `json:"widgets"`
 }
 
@@ -118,24 +101,18 @@ func registerWidget(w Widget) {
 	registry[w.ID()] = w
 }
 
-// displayPresets defines built-in widget layouts.
+// displayPresets defines built-in widget layouts. 현재는 compact 한 종류.
+// 그 이상이 필요하면 사용자가 Config.Preset / Config.Lines로 custom 레이아웃을 정의한다.
 var displayPresets = map[string][][]string{
 	"compact": {
 		{"projectInfo", "model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"},
 	},
-	"normal": {
-		{"model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"},
-		{"projectInfo", "sessionDuration", "burnRate", "todoProgress"},
-	},
-	"detailed": {
-		{"model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"},
-		{"projectInfo", "sessionName", "sessionDuration", "burnRate", "tokenSpeed", "depletionTime", "todoProgress"},
-		{"configCounts", "toolActivity", "agentStatus", "cacheHit", "performance"},
-	},
 }
 
 // presetCharToWidget maps single characters to widget IDs for compact preset notation.
+// 등록된 위젯에 대응하는 char만 매핑한다 (widgets_core.go, widgets_project.go, widgets_analytics.go).
 var presetCharToWidget = map[byte]string{
+	// core
 	'M': "model",
 	'C': "context",
 	'$': "cost",
@@ -143,34 +120,13 @@ var presetCharToWidget = map[byte]string{
 	'7': "rateLimit7d",
 	'S': "rateLimit7dSonnet",
 	'P': "projectInfo",
-	'I': "sessionId",
-	'D': "sessionDuration",
-	'K': "configCounts",
-	'F': "performance",
-	'U': "budget",
-	'T': "toolActivity",
-	'A': "agentStatus",
-	'O': "todoProgress",
-	'B': "burnRate",
-	'E': "depletionTime",
-	'H': "cacheHit",
-	'X': "codexUsage",
-	'G': "geminiUsage",
-	'Z': "zaiUsage",
-	'N': "tokenBreakdown",
-	'W': "forecast",
+	// analytics
 	'V': "version",
-	'L': "linesChanged",
-	'Y': "outputStyle",
-	'Q': "tokenSpeed",
-	'J': "sessionName",
-	'@': "todayCost",
-	'?': "lastPrompt",
-	'm': "vimMode",
 	'a': "apiDuration",
-	'p': "peakHours",
-	'g': "geminiUsageAll",
-	'i': "sessionIdFull",
+	'D': "sessionDuration",
+	'B': "burnRate",
+	'H': "cacheHit",
+	'F': "performance",
 }
 
 // resolvePreset parses Config.Preset into Config.Lines.
