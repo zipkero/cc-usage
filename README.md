@@ -6,7 +6,7 @@ Claude Code status line plugin. 모델, 컨텍스트 사용량, 비용, rate lim
 my-project (main) │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25 │ 5h: 42% │ 7d: 69%
 ```
 
-> 이 브랜치는 marketplace 배포용 pre-built 바이너리만 포함합니다. **소스 코드와 빌드 환경은 [`master` 브랜치](https://github.com/zipkero/cc-usage/tree/master)에 있습니다.**
+> 이 브랜치는 marketplace 배포용 pre-built 바이너리만 포함합니다. **소스 코드와 빌드 환경은 [`main` 브랜치](https://github.com/zipkero/cc-usage/tree/main)에 있습니다.**
 
 ## Features
 
@@ -179,7 +179,7 @@ cc-usage는 외부 서버로 데이터를 전송하지 않는다.
 
 ## Development
 
-소스 코드, 빌드 스크립트, 설계 문서는 [`master` 브랜치](https://github.com/zipkero/cc-usage/tree/master)에서 확인하세요.
+소스 코드, 빌드 스크립트, 설계 문서는 [`main` 브랜치](https://github.com/zipkero/cc-usage/tree/main)에서 확인하세요.
 
 ## License
 
