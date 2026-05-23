@@ -80,7 +80,7 @@
 
 ## Section: 회귀 방지 테스트
 
-- [ ] task-009: `widget_test.go` 신규 — preset 파싱 및 분석 위젯 GetData
+- [x] task-009: `widget_test.go` 신규 — preset 파싱 및 분석 위젯 GetData
   - 목적: preset 문자열 파싱과 새 분석 위젯의 누락 입력 처리 동작이 다음 릴리스에서 깨지면 `go test ./...`가 즉시 감지한다
   - 접근: `widget_test.go`를 신규 생성하여 다음 케이스를 추가한다 — `TestResolvePresetParsesChars`(`"P|M$C"` → `[["projectInfo"], ["model","cost","context"]]`, `DisplayMode == "custom"`), `TestResolvePresetIgnoresUnknownChars`(`"Mz$"` → `[["model","cost"]]`), `TestBurnRateGetDataNilOnMissingCost`(`(nil, nil)`), `TestSessionDurationGetDataNilOnMissingMs`(`(nil, nil)`)
   - 검증 조건:
