@@ -101,30 +101,42 @@ chmod +x bin/run.sh bin/cc-usage-*   # macOS / Linux 만 해당
 |------|--------|------|
 | `language` | `"auto"` | `"auto"`, `"en"`, `"ko"` |
 | `plan` | `"max"` | `"pro"`, `"max"` |
-| `displayMode` | `"compact"` | `"compact"`, `"normal"`, `"detailed"`, `"custom"` |
+| `displayMode` | `"compact"` | `"compact"` 또는 `"custom"` (custom은 `preset`/`lines` 정의 시 자동 적용) |
 | `theme` | `"default"` | 8개 테마 중 선택 |
 | `separator` | `"pipe"` | `"pipe"`, `"space"`, `"dot"`, `"arrow"` |
-| `dailyBudget` | - | 일일 예산 (USD) |
+| `dailyBudget` | - | 일일 예산 (USD, 현재 미사용) |
 | `disabledWidgets` | `[]` | 비활성화할 위젯 ID 목록 |
-| `preset` | - | 위젯 단축 문자열 (예: `"MC$R\|BD"`) |
+| `preset` | - | 위젯 단축 문자열. 한 글자 = 한 위젯, `\|`로 줄 구분 (예: `"PMC$R\|VaDBHF"`) |
+| `lines` | - | 위젯 ID 배열의 배열로 직접 레이아웃 정의 (preset 대안) |
 
 ## Widgets
 
 ### Core
 
-| ID | 설명 |
-|----|------|
-| `model` | 모델명 + 아이콘 (◆Opus/◇Sonnet/○Haiku) |
-| `context` | 프로그레스바 + 사용률 + 토큰 수 |
-| `cost` | 세션 비용 |
-| `rateLimit5h` | 5시간 rate limit |
-| `rateLimit7d` | 7일 rate limit |
-| `rateLimit7dSonnet` | 7일 Sonnet rate limit |
-| `projectInfo` | 디렉토리 + git branch |
+| ID | preset char | 설명 |
+|----|:-:|------|
+| `model` | `M` | 모델명 + 아이콘 (◆Opus/◇Sonnet/○Haiku) |
+| `context` | `C` | 프로그레스바 + 사용률 + 토큰 수 |
+| `cost` | `$` | 세션 비용 |
+| `rateLimit5h` | `R` | 5시간 rate limit |
+| `rateLimit7d` | `7` | 7일 rate limit |
+| `rateLimit7dSonnet` | `S` | 7일 Sonnet rate limit |
+| `projectInfo` | `P` | 디렉토리 + git branch (+ worktree, subpath) |
 
-### Analytics (normal/detailed mode)
+### Analytics (옵션 — preset/lines로 노출)
 
-`sessionDuration`, `burnRate`, `cacheHit`, `tokenSpeed`, `todoProgress`, `toolActivity`, `agentStatus`, `configCounts`, `performance`, `tokenBreakdown`, `forecast`, `budget`, `todayCost`, `linesChanged`, `outputStyle`, `version`, `peakHours` 등
+stdin payload에서 바로 계산되는 값들. compact 모드에는 포함되지 않으며, 아래 `preset` char를 조합해서 노출시킵니다.
+
+| ID | preset char | 설명 |
+|----|:-:|------|
+| `version` | `V` | Claude Code 앱 버전 (`v2.1.150`) |
+| `apiDuration` | `a` | 누적 API 호출 시간 (`API: 14m`) |
+| `sessionDuration` | `D` | 세션 누적 시간 (`Session: 45m`) |
+| `burnRate` | `B` | 시간당 비용 (`Burn: $5.69/h`) |
+| `cacheHit` | `H` | 마지막 턴 캐시 히트율 (`Cache: 93%`) |
+| `performance` | `F` | API time / 전체 세션 time 비율 (`Perf: 32%`) |
+
+> **preset 예시**: `"PMC$R\|VaDBHF"` → 1줄 `projectInfo │ model │ context │ cost │ rateLimit5h`, 2줄 `version │ apiDuration │ sessionDuration │ burnRate │ cacheHit │ performance`.
 
 ## Troubleshooting
 
