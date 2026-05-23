@@ -28,12 +28,21 @@ my-project (main) │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25 �
 # 2. 플러그인 설치
 /plugin install cc-usage
 
-# 3. status line 설정 적용
+# 3. status line 설정 적용 — 반드시 이 단계를 거치세요
 /cc-usage:cc-usage-install
 
 # 4. 적용
 /reload-plugins
 ```
+
+> **업데이트 시 경로가 깨지지 않게 하려면 위 3단계를 반드시 실행하세요.**
+> Claude Code의 `/plugin install`은 settings.json에 버전 포함 경로
+> (`~/.claude/plugins/cache/zipkero-cc-usage/cc-usage/<VERSION>/bin/run.sh`)를
+> 써넣는 경우가 있는데, 이러면 다음 `/plugin update`마다 settings.json을 손으로
+> 고쳐야 합니다. `/cc-usage:cc-usage-install`은 버전 segment가 없는 안정 경로
+> (`~/.claude/plugins/marketplaces/zipkero-cc-usage/bin/...`)로 자동 교체합니다.
+> 이 디렉터리는 `/plugin update` 시 in-place로 git pull되어 settings.json은 손댈 필요 없습니다.
+> Windows에서도 동일하게 작동하며, 이 경우 `.exe`를 직접 가리키는 forward slash 경로가 기록됩니다.
 
 ### Manual
 
