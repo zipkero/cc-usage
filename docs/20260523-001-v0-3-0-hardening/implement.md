@@ -70,7 +70,7 @@
     - 확인: `rg -n 'NoContext|OneM|SevenDAll' . -g '!docs'` 0건 확인. 수동 렌더 결과 비교
   - 참조: SPEC §5.9, ANALYSIS §2.5
 
-- [ ] task-008: `validateConfigEnums` 도입 (displayMode / separator / theme / language)
+- [x] task-008: `validateConfigEnums` 도입 (displayMode / separator / theme / language)
   - 목적: 사용자가 cc-usage.json에 알 수 없는 enum 값을 지정하면 stderr에 어느 필드의 어떤 값이 무효인지 한 줄 경고가 출력되고 stdout 위젯은 해당 필드의 기본값으로 fallback해서 정상 렌더된다. 유효한 값만 사용하면 stderr는 비어있다
   - 접근: `config.go`에 `validateConfigEnums(cfg *Config)` 헬퍼를 추가하고 `loadConfig`의 unmarshal+merge 직후에 호출한다. 각 필드의 허용 집합과 fallback 기본값은 ANALYSIS §2.4 표를 따른다(`displayMode` ∈ {compact, custom} → "compact", `separator` ∈ {pipe, dot, arrow, space, ""} → "", `theme` ∈ themes 키 ∪ {""} → "", `language` ∈ {auto, en, ko} → "auto"). 경고 emitter는 `fmt.Fprintln(os.Stderr, ...)` 직접 호출이며 `debugLog` 사용 금지(DEBUG env 미설정에서도 출력되어야 함)
   - 검증 조건:

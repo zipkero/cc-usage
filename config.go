@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"sort"
 )
 
 // CacheConfig holds cache-related settings.
@@ -67,5 +69,74 @@ func loadConfig(path string) Config {
 		cfg.Cache.TTLSeconds = defaults.Cache.TTLSeconds
 	}
 
+	validateConfigEnums(&cfg)
+
 	return cfg
+}
+
+// validateConfigEnums checks enum-typed config fields against their allowed
+// sets. On unknown non-empty value, it emits a single-line warning to
+// os.Stderr (independent of DEBUG) and resets the field to its fallback
+// default. Empty values are treated as "use default" and pass silently.
+func validateConfigEnums(cfg *Config) {
+	themeAllowed := make([]string, 0, len(themes)+1)
+	for k := range themes {
+		themeAllowed = append(themeAllowed, k)
+	}
+	themeAllowed = append(themeAllowed, "")
+
+	checks := []struct {
+		field    string
+		value    *string
+		allowed  []string
+		fallback string
+	}{
+		{"displayMode", &cfg.DisplayMode, []string{"compact", "custom"}, "compact"},
+		{"separator", &cfg.Separator, []string{"pipe", "dot", "arrow", "space", ""}, ""},
+		{"theme", &cfg.Theme, themeAllowed, ""},
+		{"language", &cfg.Language, []string{"auto", "en", "ko"}, "auto"},
+	}
+
+	for _, c := range checks {
+		v := *c.value
+		if v == "" {
+			continue
+		}
+		if containsString(c.allowed, v) {
+			continue
+		}
+		fmt.Fprintln(os.Stderr, formatEnumWarning(c.field, v, c.allowed, c.fallback))
+		*c.value = c.fallback
+	}
+}
+
+func containsString(set []string, v string) bool {
+	for _, s := range set {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
+func formatEnumWarning(field, value string, allowed []string, fallback string) string {
+	sorted := append([]string(nil), allowed...)
+	sort.Strings(sorted)
+	return fmt.Sprintf("cc-usage: invalid config: %s=%s not in {%s}, falling back to %s",
+		field, value, joinAllowed(sorted), fallback)
+}
+
+func joinAllowed(items []string) string {
+	out := ""
+	for i, s := range items {
+		if i > 0 {
+			out += ", "
+		}
+		if s == "" {
+			out += `""`
+		} else {
+			out += s
+		}
+	}
+	return out
 }
