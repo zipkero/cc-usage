@@ -150,6 +150,14 @@ DEBUG=cc-usage ./dist/cc-usage <<< '{...}'   # 또는 DEBUG=1
 - `bin/run.sh`: OS/ARCH 감지 후 알맞은 바이너리 실행하는 wrapper
 - `.claude-plugin/{plugin,marketplace}.json`: Claude Code plugin 메타데이터
 
+### 버전 정책
+
+사용자가 체감 가능한 fix·feature 변경은 항상 SemVer patch(또는 minor) bump를 동반한다 (`Makefile` VERSION, `.claude-plugin/plugin.json` version, `api.go` userAgent 세 곳을 같은 값으로 동시 갱신).
+
+- 이유: `/plugin` UI의 update 감지는 `plugin.json`의 version 필드 변화에 의존한다. 동등 hash 재빌드만 push하면 사용자 머신의 marketplaces 사본이 stale로 고착되어 fix가 적용되지 않는다.
+- version-only commit은 권장하지 않으며 해당 fix·feature commit에 묶어 한 번에 올린다.
+- 순수 docs·테스트·내부 리팩터(사용자에게 노출 동작 변화 없음)는 bump 대상이 아니다.
+
 ### 릴리스 절차 (bin/ 갱신 시)
 
 `make build`로 `bin/`을 다시 만든 뒤, main에 commit하고 release 브랜치에도 반영해야 한다.
