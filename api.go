@@ -58,7 +58,7 @@ var lastCleanup time.Time
 
 const (
 	apiURL           = "https://api.anthropic.com/api/oauth/usage"
-	userAgent        = "cc-usage/0.3.1"
+	userAgent        = "cc-usage/0.3.2"
 	apiBeta          = "oauth-2025-04-20"
 	staleCacheMaxAge = time.Hour
 	apiTimeout       = 2 * time.Second
@@ -307,6 +307,9 @@ func parseEntry(utilization float64, resetsAt string) *UsageLimitEntry {
 }
 
 // cleanOldCaches removes cache files older than 1 hour. Fire-and-forget.
+// Handles both cache-*.json and cache-*.json.lock — the lock family belongs
+// to the same cache responsibility and uses the same staleness threshold.
+// Session-state locks are intentionally not touched here (see cleanOldSessionStates).
 func cleanOldCaches() {
 	now := time.Now()
 	if now.Sub(lastCleanup) < time.Hour {
@@ -318,18 +321,24 @@ func cleanOldCaches() {
 	if err != nil {
 		return
 	}
-	pattern := filepath.Join(home, ".cache", "cc-usage", "cache-*.json")
-	files, err := filepath.Glob(pattern)
-	if err != nil {
-		return
+	dir := filepath.Join(home, ".cache", "cc-usage")
+	patterns := []string{
+		filepath.Join(dir, "cache-*.json"),
+		filepath.Join(dir, "cache-*.json.lock"),
 	}
-	for _, f := range files {
-		info, err := os.Stat(f)
+	for _, pattern := range patterns {
+		files, err := filepath.Glob(pattern)
 		if err != nil {
 			continue
 		}
-		if now.Sub(info.ModTime()) > time.Hour {
-			_ = os.Remove(f)
+		for _, f := range files {
+			info, err := os.Stat(f)
+			if err != nil {
+				continue
+			}
+			if now.Sub(info.ModTime()) > time.Hour {
+				_ = os.Remove(f)
+			}
 		}
 	}
 }

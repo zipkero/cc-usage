@@ -3,7 +3,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"syscall"
 	"time"
@@ -39,6 +41,9 @@ func acquireCacheFileLock(lockPath string, timeout, retryDelay time.Duration) (c
 			return func() error {
 				unlockErr := unlockWindowsFile(file, &overlapped)
 				closeErr := file.Close()
+				if err := os.Remove(lockPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					debugLog("lock", "remove %s failed: %v", lockPath, err)
+				}
 				if unlockErr != nil {
 					return unlockErr
 				}

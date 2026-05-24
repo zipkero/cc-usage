@@ -177,6 +177,10 @@ var lastSessionStateCleanup time.Time
 
 // cleanOldSessionStates removes session-state files older than sessionStateTTL.
 // Fire-and-forget; safe to call on every invocation.
+// Handles both session-state-*.json and session-state-*.json.lock — the lock
+// family belongs to the same session-state responsibility and uses the same
+// staleness threshold. API cache locks are intentionally not touched here
+// (see cleanOldCaches).
 func cleanOldSessionStates() {
 	now := time.Now()
 	if now.Sub(lastSessionStateCleanup) < time.Hour {
@@ -188,18 +192,24 @@ func cleanOldSessionStates() {
 	if err != nil {
 		return
 	}
-	pattern := filepath.Join(home, ".cache", "cc-usage", "session-state-*.json")
-	files, err := filepath.Glob(pattern)
-	if err != nil {
-		return
+	dir := filepath.Join(home, ".cache", "cc-usage")
+	patterns := []string{
+		filepath.Join(dir, "session-state-*.json"),
+		filepath.Join(dir, "session-state-*.json.lock"),
 	}
-	for _, f := range files {
-		info, err := os.Stat(f)
+	for _, pattern := range patterns {
+		files, err := filepath.Glob(pattern)
 		if err != nil {
 			continue
 		}
-		if now.Sub(info.ModTime()) > sessionStateTTL {
-			_ = os.Remove(f)
+		for _, f := range files {
+			info, err := os.Stat(f)
+			if err != nil {
+				continue
+			}
+			if now.Sub(info.ModTime()) > sessionStateTTL {
+				_ = os.Remove(f)
+			}
 		}
 	}
 }

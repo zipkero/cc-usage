@@ -3,23 +3,29 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
+
+// pathDisplayMaxRunes is the soft length budget for the path token before
+// segment-aware shrink kicks in (ANALYSIS §5.A). Kept widget-private — no
+// config knob (SPEC §3).
+const pathDisplayMaxRunes = 50
 
 // --- projectInfo widget ---
 
 type projectInfoWidget struct{}
 
 type projectInfoData struct {
-	DirName  string
-	Branch   string
-	Ahead    int
-	Behind   int
-	Subpath  string
-	Worktree string
+	DisplayPath string
+	Branch      string
+	Ahead       int
+	Behind      int
+	Worktree    string
 }
 
 func (w projectInfoWidget) ID() string { return "projectInfo" }
@@ -30,17 +36,13 @@ func (w projectInfoWidget) GetData(ctx *Context) (any, error) {
 		return nil, nil
 	}
 
+	// home-tilde compression + segment-aware shrink. UserHomeDir failure
+	// degrades to the absolute path (SPEC §5.2 fallback) — never to bare
+	// base name. project_dir is intentionally ignored: the full path already
+	// disambiguates same-base-name worktrees (SPEC §5.4).
+	home, _ := os.UserHomeDir()
 	d := &projectInfoData{
-		DirName: filepath.Base(currentDir),
-	}
-
-	// subpath: project_dir != current_dir
-	projectDir := ctx.Stdin.Workspace.ProjectDir
-	if projectDir != "" && projectDir != currentDir {
-		rel, err := filepath.Rel(projectDir, currentDir)
-		if err == nil && rel != "." {
-			d.Subpath = rel
-		}
+		DisplayPath: shrinkPath(compressHome(currentDir, home), pathDisplayMaxRunes),
 	}
 
 	// worktree
@@ -97,9 +99,8 @@ func (w projectInfoWidget) Render(data any, ctx *Context) string {
 
 	var b strings.Builder
 
-	// dirname (truncate long names)
-	dirName := truncate(d.DirName, 25)
-	b.WriteString(fmt.Sprintf("%s%s%s", theme.Folder, dirName, RESET))
+	// full display path (home-tilde compressed + length-normalized in GetData)
+	b.WriteString(fmt.Sprintf("%s%s%s", theme.Folder, d.DisplayPath, RESET))
 
 	// branch info
 	if d.Branch != "" {
@@ -118,12 +119,66 @@ func (w projectInfoWidget) Render(data any, ctx *Context) string {
 		b.WriteString(fmt.Sprintf(" %s[%s]%s", theme.Info, d.Worktree, RESET))
 	}
 
-	// subpath
-	if d.Subpath != "" {
-		b.WriteString(fmt.Sprintf(" %s%s%s", theme.Dim, d.Subpath, RESET))
-	}
-
 	return b.String()
+}
+
+// compressHome substitutes the user's home directory prefix with "~". When
+// home is empty (UserHomeDir failed) or current is outside home, the absolute
+// path is returned unchanged (SPEC §5.1, §5.2; ANALYSIS §5.C — exact-match
+// short-circuit + HasPrefix on home+sep, no filepath.Rel).
+func compressHome(current, home string) string {
+	if home == "" {
+		return current
+	}
+	if current == home {
+		return "~"
+	}
+	sep := string(filepath.Separator)
+	if strings.HasPrefix(current, home+sep) {
+		return "~" + sep + strings.TrimPrefix(current, home+sep)
+	}
+	return current
+}
+
+// shrinkPath enforces pathDisplayMaxRunes by collapsing leading segments into
+// a single "…" while preserving the head marker ("~" or leading separator)
+// and the base name (SPEC §5.3; ANALYSIS §5.A). If the minimal form
+// "<head>/…/<base>" still exceeds max, or the path has no separable head,
+// the base name is returned alone — never truncated mid-rune.
+func shrinkPath(s string, max int) string {
+	if utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	sep := string(filepath.Separator)
+	var head string
+	rest := s
+	switch {
+	case strings.HasPrefix(s, "~"+sep):
+		head = "~"
+		rest = strings.TrimPrefix(s, "~"+sep)
+	case strings.HasPrefix(s, sep):
+		head = ""
+		rest = strings.TrimPrefix(s, sep)
+	}
+	// segments after the head; need at least head + 1 middle + base to shrink
+	segs := strings.Split(rest, sep)
+	if len(segs) < 2 {
+		// only base (or head + base) — nothing to collapse, base goes as-is.
+		return filepath.Base(s)
+	}
+	base := segs[len(segs)-1]
+	var prefix string
+	if head != "" {
+		prefix = head + sep
+	} else if strings.HasPrefix(s, sep) {
+		prefix = sep
+	}
+	candidate := prefix + "…" + sep + base
+	if utf8.RuneCountInString(candidate) <= max {
+		return candidate
+	}
+	// even the minimal collapsed form busts the budget — base alone.
+	return base
 }
 
 // --- registration ---

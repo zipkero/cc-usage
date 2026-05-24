@@ -150,10 +150,8 @@ func resolvePreset(config *Config) {
 
 // OrchestrateResult holds the result of widget orchestration.
 type OrchestrateResult struct {
-	ProjectInfo string   // projectInfo rendered separately (always fresh)
-	Lines       []string // rendered lines without projectInfo
-	WidgetCount int      // count of non-projectInfo widgets
-	HasProject  bool     // whether projectInfo was rendered
+	Lines       []string // rendered lines
+	WidgetCount int      // count of rendered widgets
 }
 
 // orchestrate runs all widgets according to the display configuration.
@@ -197,12 +195,7 @@ func orchestrate(ctx *Context) OrchestrateResult {
 			if rendered == "" {
 				continue
 			}
-			if widgetID == "projectInfo" {
-				result.ProjectInfo = rendered
-				result.HasProject = true
-			} else {
-				parts = append(parts, rendered)
-			}
+			parts = append(parts, rendered)
 		}
 		if len(parts) > 0 {
 			result.WidgetCount += len(parts)
