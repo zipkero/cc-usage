@@ -1,12 +1,20 @@
 # v0-3-x-cleanup — IMPLEMENT
 
+- [ ] task-003: `DESIGN.md` / `ROADMAP.md` 제거 및 `CLAUDE.md` 설계 문서 섹션 정리
+  - 목적: 사용 안 되는 historical 설계 문서 두 파일을 repo에서 통째로 제거하고, CLAUDE.md의 설계 문서 섹션을 README / CLAUDE.md / 코드 단일 출처 원칙에 맞춰 정리해 stale reference가 새 합류자를 혼동시키지 않게 한다
+  - 접근: `git rm DESIGN.md ROADMAP.md`로 두 파일을 통째 삭제한다. `CLAUDE.md`의 "설계 문서" 섹션에서 `DESIGN.md` / `ROADMAP.md`를 가리키는 표 행 두 줄을 제거하고, 섹션 본문이 "진실 layer는 README(사용자) / CLAUDE.md(개발자) / 코드(런타임)"임을 명시하도록 갱신한다
+  - 검증 조건:
+    - 결과: `git ls-files | grep -E '^(DESIGN|ROADMAP)\.md$'`가 0건을 반환하고, `CLAUDE.md`의 "설계 문서" 섹션에 `DESIGN.md` / `ROADMAP.md`를 가리키는 행이 없으며, 본문이 단일 출처 layer를 명시한다. 또한 `make build`, `make build-local`, `go test ./...` 세 명령이 변경 전과 동일하게 exit 0으로 종료한다
+    - 확인: `git ls-files` + `grep -n` 결과 확인 / `CLAUDE.md`의 "설계 문서" 섹션 육안 검토 / `make build && make build-local && go test ./...` 순차 실행하여 모두 exit 0
+  - 참조: SPEC §5.1, SPEC §5.3, SPEC §5.4, ANALYSIS §5.4
+
 - [ ] task-001: `DESIGN.md` Translations 예시 스키마 동기화
   - 목적: 설계 문서의 `Translations` 예시 코드 블록이 현 코드(`widget.go`)의 구조와 일치하여, 외부 독자가 본 라벨 목록과 실제 코드가 어긋나지 않는다
-  - 접근: `DESIGN.md`의 "i18n / 다국어" 섹션 안 Translations 코드 블록(`Labels` 라인 / `Errors` 라인 / `Widgets` 블록)만 수술적으로 편집한다. `Labels`는 `FiveH, SevenD, SevenDSonnet` 3필드로 줄이고, `Errors struct{ NoContext string }` 줄은 통째로 제거하며, `Widgets` 블록은 현 코드 5필드(`ApiDuration, BurnRate, Cache, Performance, Session`)로 축소한다. 같은 섹션의 산문은 손대지 않는다
+  - 접근: 본 task는 task-003의 통째 제거가 먼저 실행되면 trivially 충족된다 — DESIGN.md 부재로 정합성 문제 자체가 사라지고, `ripgrep`으로 `NoContext|OneM|SevenDAll`을 비-docs 영역에서 검색했을 때 자동으로 0건이 된다. 만약 어떤 사유로 task-003 채택이 뒤집혀 DESIGN.md를 부분 유지하는 시나리오로 회귀하면, ANALYSIS §5.2의 surgical edit (Labels 3필드, Errors 줄 삭제, Widgets 5필드)로 되돌아간다
   - 검증 조건:
-    - 결과: `rg -n "NoContext|OneM|SevenDAll" --glob '!docs/**'`가 0건을 반환하고, `DESIGN.md`의 Translations 블록이 `widget.go:17-41`의 `Translations` 정의와 필드 단위로 일치한다. 또한 `make build`, `make build-local`, `go test ./...` 세 명령이 변경 전과 동일하게 exit 0으로 종료한다 (DESIGN.md 편집은 Go 컴파일 대상이 아니므로 실측 영향은 없지만 회귀 가드로 함께 확인)
-    - 확인: `rg -n "NoContext|OneM|SevenDAll" --glob '!docs/**'` 실행 후 출력 비어 있음을 직접 확인 / `DESIGN.md`의 변경된 블록과 `widget.go:17-41`을 side-by-side diff로 대조 / `make build && make build-local && go test ./...` 순차 실행하여 모두 exit 0
-  - 참조: SPEC §5.1, SPEC §5.3, ANALYSIS §4, ANALYSIS §5.2
+    - 결과: `rg -n "NoContext|OneM|SevenDAll" --glob '!docs/**'`가 0건을 반환한다. (task-003 후속 효과)
+    - 확인: 해당 ripgrep 실행 후 출력 비어 있음 / `make build && make build-local && go test ./...` 순차 실행하여 모두 exit 0
+  - 참조: SPEC §5.1, SPEC §5.3, ANALYSIS §4
 
 - [ ] task-002: `.gitignore`에 module-root stray binary 패턴 추가
   - 목적: 깨끗한 트리에서 `go build ./...`를 실행한 직후 `git status`가 `nothing to commit, working tree clean`을 반환하여, module-name(`cc-usage`) 바이너리가 거짓 untracked로 노출되지 않는다

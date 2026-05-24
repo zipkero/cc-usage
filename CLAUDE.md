@@ -123,12 +123,13 @@ DEBUG=cc-usage ./dist/cc-usage <<< '{...}'   # 또는 DEBUG=1
 
 ## 설계 문서
 
-| 파일 | 용도 |
-|------|------|
-| `DESIGN.md` | MVP 시점의 코어 시스템 스펙 reference (Plugin 계약, stdin 구조, 아키텍처 도식). 일부 historical 흔적은 현 코드와 어긋날 수 있음 — 코드가 정답 |
-| `ROADMAP.md` | 미구현 확장 위젯의 historical 의도·스펙 기록. 새 위젯 도입 검토 시 참고 |
+진실 layer는 세 곳이다.
 
-> 진행 상태 트래커는 `docs/<feature-dir>/` 아래의 spec/analysis/implement.md가 담당한다. 설계 문서 안의 `> **TODO(...)**` 블록은 reference 차원의 메모이며, 실제 구현 결정은 해당 feature spec에서 commit한다.
+- **`README.md`**: 사용자 대상 — install / config / 노출 위젯 / troubleshooting.
+- **`CLAUDE.md`**: 개발자·Claude 대상 — 아키텍처, 위젯 추가 절차, 빌드/테스트, 배포 절차.
+- **소스 코드**: 런타임 진실 — `stdin.go` (입력 스키마), `widget.go`+`widgets_*.go` (위젯 명세), `api.go` (외부 API), `config.go` (설정 스키마), `locales/*.json` (i18n).
+
+진행 상태 트래커는 `docs/<feature-dir>/` 아래의 spec/analysis/implement.md가 담당한다. 새 위젯·새 캐시·새 외부 통합 같은 의미 있는 설계는 그 feature spec에서 commit한다.
 
 ## 배포
 
