@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -106,6 +108,116 @@ func TestAtomicWriteFileReplacesValidJSON(t *testing.T) {
 	}
 	if obj.Version != 2 {
 		t.Fatalf("version = %d, want 2", obj.Version)
+	}
+}
+
+func TestShouldRestoreCost(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	freshSavedAt := now.Add(-30 * time.Second).Unix()
+	staleSavedAt := now.Add(-(sessionStateTTL + time.Second)).Unix()
+
+	makeStdin := func(cost float64) StdinInput {
+		var s StdinInput
+		s.Cost.TotalCostUsd = cost
+		return s
+	}
+	makeCached := func(cost float64, savedAt int64) *SessionState {
+		cs := makeStdin(cost)
+		return &SessionState{
+			CachedStdin: &cs,
+			WidgetCount: 2,
+			SavedAt:     savedAt,
+		}
+	}
+
+	t.Run("restores when stdin cost=0 and cache cost>0 fresh", func(t *testing.T) {
+		got := shouldRestoreCost(makeStdin(0), makeCached(1.25, freshSavedAt), now)
+		if !got {
+			t.Fatalf("shouldRestoreCost = false, want true")
+		}
+	})
+
+	t.Run("no restore when cached is nil", func(t *testing.T) {
+		if shouldRestoreCost(makeStdin(0), nil, now) {
+			t.Fatalf("shouldRestoreCost = true with nil cache, want false")
+		}
+	})
+
+	t.Run("no restore when cached.CachedStdin is nil", func(t *testing.T) {
+		state := &SessionState{CachedStdin: nil, WidgetCount: 2, SavedAt: freshSavedAt}
+		if shouldRestoreCost(makeStdin(0), state, now) {
+			t.Fatalf("shouldRestoreCost = true with nil CachedStdin, want false")
+		}
+	})
+
+	t.Run("no restore when cache cost=0", func(t *testing.T) {
+		if shouldRestoreCost(makeStdin(0), makeCached(0, freshSavedAt), now) {
+			t.Fatalf("shouldRestoreCost = true with cache cost=0, want false")
+		}
+	})
+
+	t.Run("no restore when SavedAt=0", func(t *testing.T) {
+		if shouldRestoreCost(makeStdin(0), makeCached(1.25, 0), now) {
+			t.Fatalf("shouldRestoreCost = true with SavedAt=0, want false")
+		}
+	})
+
+	t.Run("no restore when SavedAt older than sessionStateTTL", func(t *testing.T) {
+		if shouldRestoreCost(makeStdin(0), makeCached(1.25, staleSavedAt), now) {
+			t.Fatalf("shouldRestoreCost = true with stale SavedAt, want false")
+		}
+	})
+
+	t.Run("no restore when stdin cost>0", func(t *testing.T) {
+		if shouldRestoreCost(makeStdin(0.5), makeCached(1.25, freshSavedAt), now) {
+			t.Fatalf("shouldRestoreCost = true with stdin cost>0, want false")
+		}
+	})
+}
+
+func TestCleanOldSessionStates(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	prev := lastSessionStateCleanup
+	lastSessionStateCleanup = time.Time{}
+	t.Cleanup(func() {
+		lastSessionStateCleanup = prev
+	})
+
+	cacheDir := filepath.Join(home, ".cache", "cc-usage")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+
+	writeFixture := func(name string, mtime time.Time) string {
+		t.Helper()
+		path := filepath.Join(cacheDir, name)
+		if err := os.WriteFile(path, []byte("{}"), 0644); err != nil {
+			t.Fatalf("write fixture %s: %v", name, err)
+		}
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatalf("chtimes %s: %v", name, err)
+		}
+		return path
+	}
+
+	now := time.Now()
+	stalePath := writeFixture("session-state-stale.json", now.Add(-(sessionStateTTL + time.Minute)))
+	freshPath := writeFixture("session-state-fresh.json", now)
+	cachePath := writeFixture("cache-old.json", now.Add(-2*time.Hour))
+
+	cleanOldSessionStates()
+
+	if _, err := os.Stat(stalePath); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("stale session-state still exists (err=%v), want removed", err)
+	}
+	if _, err := os.Stat(freshPath); err != nil {
+		t.Fatalf("fresh session-state stat: %v, want present", err)
+	}
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("cache-old.json stat: %v, want present (different prefix)", err)
 	}
 }
 

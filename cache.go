@@ -170,6 +170,54 @@ func loadSessionState(cacheKey string) *SessionState {
 	return &state
 }
 
+// lastSessionStateCleanup throttles session-state cleanup to once per hour.
+// Independent of api.go's lastCleanup because the two cache families use
+// different staleness thresholds.
+var lastSessionStateCleanup time.Time
+
+// cleanOldSessionStates removes session-state files older than sessionStateTTL.
+// Fire-and-forget; safe to call on every invocation.
+func cleanOldSessionStates() {
+	now := time.Now()
+	if now.Sub(lastSessionStateCleanup) < time.Hour {
+		return
+	}
+	lastSessionStateCleanup = now
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	pattern := filepath.Join(home, ".cache", "cc-usage", "session-state-*.json")
+	files, err := filepath.Glob(pattern)
+	if err != nil {
+		return
+	}
+	for _, f := range files {
+		info, err := os.Stat(f)
+		if err != nil {
+			continue
+		}
+		if now.Sub(info.ModTime()) > sessionStateTTL {
+			_ = os.Remove(f)
+		}
+	}
+}
+
+// shouldRestoreCost reports whether stdin.cost should be restored from
+// cached state. Returns true only when stdin reports cost=0 while the cache
+// still holds a positive cost saved within sessionStateTTL. Pure function —
+// safe to test in isolation.
+func shouldRestoreCost(stdin StdinInput, cached *SessionState, now time.Time) bool {
+	if cached == nil || cached.CachedStdin == nil {
+		return false
+	}
+	return stdin.Cost.TotalCostUsd == 0 &&
+		cached.CachedStdin.Cost.TotalCostUsd > 0 &&
+		cached.SavedAt > 0 &&
+		now.Sub(time.Unix(cached.SavedAt, 0)) < sessionStateTTL
+}
+
 func saveSessionState(cacheKey string, state *SessionState) {
 	path := sessionStatePath(cacheKey)
 	if path == "" {

@@ -66,6 +66,10 @@ func main() {
 		rateLimits = fetchUsageLimits(token, cfg.Cache)
 	}
 
+	// Purge stale session-state files in the background. Independent of token
+	// presence — cleanup must run even when no API call is made.
+	go cleanOldSessionStates()
+
 	translations := loadTranslations(cfg.Language)
 	debugLog("main", "translations loaded: lang=%s", cfg.Language)
 
@@ -89,6 +93,9 @@ func main() {
 	if cached != nil && cached.CachedStdin != nil {
 		workspaceStale := ctx.Stdin.Workspace.CurrentDir == "" && cached.CachedStdin.Workspace.CurrentDir != ""
 		usageDegraded := result.WidgetCount < cached.WidgetCount
+		// cost widget always renders, so widget count alone cannot detect a
+		// cost-only regression — track it as an independent signal.
+		costRegressed := shouldRestoreCost(ctx.Stdin, cached, time.Now())
 
 		restoreWorkspace := workspaceStale && cached.SavedAt > 0 &&
 			time.Since(time.Unix(cached.SavedAt, 0)) < workspaceRestoreTTL
@@ -111,7 +118,12 @@ func main() {
 			}
 		}
 
-		if restoreWorkspace || usageDegraded {
+		if costRegressed {
+			debugLog("main", "cost regressed to 0 (cached=%.4f), restoring cost from cache", cached.CachedStdin.Cost.TotalCostUsd)
+			ctx.Stdin.Cost = cached.CachedStdin.Cost
+		}
+
+		if restoreWorkspace || usageDegraded || costRegressed {
 			result = orchestrate(ctx)
 		}
 	}
