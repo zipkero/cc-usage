@@ -18,7 +18,7 @@
     - 확인: 수동 테스트(예: 무응답 endpoint로 분기) + 코드 diff에서 `apiTimeout = 2 * time.Second` 확인
   - 참조: SPEC §5.2, ANALYSIS §2.3
 
-- [ ] task-012: API utilization 응답 float 호환
+- [x] task-012: API utilization 응답 float 호환
   - 목적: Anthropic Usage API가 `utilization`을 `12.0` 같은 부동소수점으로 보내도 cc-usage가 decode 실패 없이 rate limit 위젯을 0~100 사이로 클램핑된 정수 퍼센트로 렌더한다
   - 접근: `api.go`의 `apiUsageResponse.{FiveHour,SevenDay,SevenDaySonnet}.Utilization`을 `int → float64`로 변경. `parseEntry` 시그니처를 `parseEntry(utilization float64, ...)`로 바꾸고 내부에서 `clampPercent(utilization)`로 정수 변환해 `UsageLimitEntry.Utilization` (int 유지)에 대입. 회귀 방지용 `api_test.go` 신규 생성, `TestDecodeAPIResponseAcceptsDecimalUtilization`이 `12.0`/`34.5`/`101.0` decode + clamp를 확인
   - 검증 조건:
@@ -98,7 +98,7 @@
 
 ## Section: 빌드 산출물 · 릴리스 sync
 
-- [ ] task-011: `make build` 산출물 커밋 및 release 브랜치 sync
+- [x] task-011: `make build` 산출물 커밋 및 release 브랜치 sync
   - 목적: main은 v0.3.0 변경분과 5개 플랫폼 바이너리를 포함한 상태가 되고, release 브랜치는 main의 v0.3.0을 sync한 상태가 되며, GitHub default branch는 `release`를 유지한다
   - 접근: 모든 코드 Task와 테스트 통과 확인 후 `make build`로 `bin/` 5개 바이너리를 재생성하고 git에 커밋한다. 이후 release 브랜치 sync 절차는 CLAUDE.md "배포" 섹션을 그대로 따른다(별도 절차 신설 금지)
   - 검증 조건:
