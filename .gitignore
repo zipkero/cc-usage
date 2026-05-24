@@ -34,3 +34,6 @@ dist/
 # ide
 .vscode
 .idea
+
+# go build ./... 산출물 (module root)
+/cc-usage
