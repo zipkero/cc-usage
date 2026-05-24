@@ -13,7 +13,7 @@ context 위젯의 토큰 수 표시(`formatTokens`)에 절대값 기반 색 분�
 ## 상태
 - [x] SPEC
 - [x] ANALYSIS
-- [ ] IMPLEMENT
+- [x] IMPLEMENT
 
 ## 문서
 - [spec.md](./spec.md)
@@ -24,3 +24,4 @@ context 위젯의 토큰 수 표시(`formatTokens`)에 절대값 기반 색 분�
 - 2026-05-24: SPEC 작성
 - 2026-05-24: ANALYSIS 작성
 - 2026-05-24: IMPLEMENT 체크리스트 작성
+- 2026-05-24: IMPLEMENT 완료 (task-001~003 verify approved)

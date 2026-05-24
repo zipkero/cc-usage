@@ -26,7 +26,7 @@
 
 ### task-001 — `contextWidget.Render`에 토큰 색 분기 + 임계 상수 도입
 
-- [ ] 완료
+- [x] 완료
 
 **목적**
 1M context model에서 토큰 누적이 256K / 512K 임계를 넘었을 때 status line의 토큰 수 부분을 경고색/강조색으로 표시해 clear 시점 시각 cue를 제공한다. percent 색 분기는 변경 없이 유지한다.
@@ -71,7 +71,7 @@
 
 ### task-002 — context 위젯 토큰 색 회귀 테스트 추가
 
-- [ ] 완료
+- [x] 완료
 
 **목적**
 토큰 색 분기 3단(미만 / 256K / 512K)과 경계 비교(`>=`), Danger 우선 규칙, percent 색 분기 비간섭, 200K model 회귀 없음을 회귀 테스트로 고정한다.
@@ -106,7 +106,7 @@
 
 ### task-003 — v0.3.2 → v0.3.3 SemVer patch bump 동기화
 
-- [ ] 완료
+- [x] 완료
 
 **목적**
 사용자 체감 동작 변경(토큰 색 cue)에 대응해 CLAUDE.md §버전 정책에 따라 세 곳의 version 식별자를 `0.3.3`으로 동시 갱신한다. `/plugin` UI가 update를 감지해 marketplace 사본의 stale 고착을 방지한다.

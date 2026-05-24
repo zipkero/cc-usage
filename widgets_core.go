@@ -51,6 +51,11 @@ func (w modelWidget) Render(data any, ctx *Context) string {
 
 // --- context widget ---
 
+const (
+	contextTokenWarn   = 256_000
+	contextTokenDanger = 512_000
+)
+
 type contextWidget struct{}
 
 type contextData struct {
@@ -87,7 +92,19 @@ func (w contextWidget) Render(data any, ctx *Context) string {
 	theme := getTheme(ctx.Config.Theme)
 	bar := renderProgressBar(d.Percent, theme)
 	color := getColorForPercent(d.Percent, theme)
-	return fmt.Sprintf("%s %s%d%%%s %s", bar, color, d.Percent, RESET, formatTokens(d.TotalTokens))
+
+	var tokenColor, tokenReset string
+	switch {
+	case d.TotalTokens >= contextTokenDanger:
+		tokenColor = theme.Danger
+	case d.TotalTokens >= contextTokenWarn:
+		tokenColor = theme.Warning
+	}
+	if tokenColor != "" {
+		tokenReset = RESET
+	}
+
+	return fmt.Sprintf("%s %s%d%%%s %s%s%s", bar, color, d.Percent, RESET, tokenColor, formatTokens(d.TotalTokens), tokenReset)
 }
 
 // --- cost widget ---
