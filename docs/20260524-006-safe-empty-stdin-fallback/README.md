@@ -20,3 +20,4 @@ Claude Code가 cc-usage에 빈 stdin을 지속적으로 보내는 상황에서 s
 
 - 2026-05-24: SPEC 작성
 - 2026-05-24: ANALYSIS 작성
+- 2026-05-24: IMPLEMENT 체크리스트 작성
