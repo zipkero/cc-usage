@@ -295,6 +295,131 @@ func TestCleanOldSessionStatesHandlesLocks(t *testing.T) {
 	}
 }
 
+// v0.3.4 회귀: workspaceRestoreTTL이 sessionStateTTL과 동등하게 유지되어야
+// idle 후 빈 stdin이 와도 cwd를 복원할 수 있다. 짧게 되돌리면 status line이
+// 30초 이상 idle 직후 사라지는 원래 증상이 재발한다.
+func TestWorkspaceRestoreTTLAlignedWithSessionStateTTL(t *testing.T) {
+	if workspaceRestoreTTL != sessionStateTTL {
+		t.Fatalf("workspaceRestoreTTL = %v, want %v (sessionStateTTL)", workspaceRestoreTTL, sessionStateTTL)
+	}
+}
+
+// v0.3.4 회귀: SIGKILL로 atomicWriteFile defer가 못 돈 경우 dot-prefix
+// .session-state-*.json.tmp-* leftover가 누적된다. cleanOldSessionStates가
+// 같은 TTL로 이걸 정리해야 한다.
+func TestCleanOldSessionStatesHandlesTempLeftovers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	prev := lastSessionStateCleanup
+	lastSessionStateCleanup = time.Time{}
+	t.Cleanup(func() {
+		lastSessionStateCleanup = prev
+	})
+
+	cacheDir := filepath.Join(home, ".cache", "cc-usage")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+
+	writeFixture := func(name string, mtime time.Time) string {
+		t.Helper()
+		path := filepath.Join(cacheDir, name)
+		if err := os.WriteFile(path, []byte("{}"), 0644); err != nil {
+			t.Fatalf("write fixture %s: %v", name, err)
+		}
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatalf("chtimes %s: %v", name, err)
+		}
+		return path
+	}
+
+	now := time.Now()
+	staleTmp := writeFixture(".session-state-abc.json.tmp-12345", now.Add(-(sessionStateTTL + time.Minute)))
+	freshTmp := writeFixture(".session-state-xyz.json.tmp-67890", now)
+
+	cleanOldSessionStates()
+
+	if _, err := os.Stat(staleTmp); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("stale .session-state .tmp leftover still exists (err=%v), want removed", err)
+	}
+	if _, err := os.Stat(freshTmp); err != nil {
+		t.Fatalf("fresh .session-state .tmp leftover stat: %v, want present", err)
+	}
+}
+
+// v0.3.4 회귀: 옛 포맷의 좀비 session-state.json(키 suffix 없음)이 남아 있으면
+// TTL 초과 시 cleanOldSessionStates가 자동 정리해야 한다.
+func TestCleanOldSessionStatesRemovesLegacyZombie(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	prev := lastSessionStateCleanup
+	lastSessionStateCleanup = time.Time{}
+	t.Cleanup(func() {
+		lastSessionStateCleanup = prev
+	})
+
+	cacheDir := filepath.Join(home, ".cache", "cc-usage")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+
+	writeFixture := func(name string, mtime time.Time) string {
+		t.Helper()
+		path := filepath.Join(cacheDir, name)
+		if err := os.WriteFile(path, []byte("{}"), 0644); err != nil {
+			t.Fatalf("write fixture %s: %v", name, err)
+		}
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatalf("chtimes %s: %v", name, err)
+		}
+		return path
+	}
+
+	now := time.Now()
+	staleLegacy := writeFixture("session-state.json", now.Add(-(sessionStateTTL + time.Minute)))
+
+	cleanOldSessionStates()
+
+	if _, err := os.Stat(staleLegacy); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("stale legacy session-state.json still exists (err=%v), want removed", err)
+	}
+}
+
+// 갓 만들어진 legacy 좀비는 TTL 안에선 보존되어야 한다(혹시 마이그레이션 중인
+// 다른 프로세스가 쓸 가능성 차단). 다만 새 코드는 이 이름으로 쓰지 않으므로
+// 실제로 fresh한 케이스는 거의 없음.
+func TestCleanOldSessionStatesKeepsFreshLegacy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	prev := lastSessionStateCleanup
+	lastSessionStateCleanup = time.Time{}
+	t.Cleanup(func() {
+		lastSessionStateCleanup = prev
+	})
+
+	cacheDir := filepath.Join(home, ".cache", "cc-usage")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+
+	legacy := filepath.Join(cacheDir, "session-state.json")
+	if err := os.WriteFile(legacy, []byte("{}"), 0644); err != nil {
+		t.Fatalf("write legacy fixture: %v", err)
+	}
+
+	cleanOldSessionStates()
+
+	if _, err := os.Stat(legacy); err != nil {
+		t.Fatalf("fresh legacy session-state.json removed unexpectedly: %v", err)
+	}
+}
+
 func TestCacheFileLockSerializesAccess(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	locked := make(chan struct{})

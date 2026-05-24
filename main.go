@@ -133,11 +133,13 @@ func main() {
 	// widgets — which render unconditionally — would produce partial output
 	// like "$0.00 │ 5h: -- │ 7d: --" on calls with empty stdin (e.g. right
 	// after /reload-plugins before Claude Code has warmed the session).
-	noIdentity := ctx.Stdin.Workspace.CurrentDir == "" &&
-		ctx.Stdin.Model.ID == "" && ctx.Stdin.Model.DisplayName == "" &&
-		ctx.Stdin.ContextWindow.ContextWindowSize <= 0
-	if noIdentity {
-		debugLog("main", "stdin has no identity context, suppressing output")
+	//
+	// Exception: when account-global rate-limit data is available from the
+	// API cache, render anyway. Empty status lines hide useful 5h/7d signals
+	// during the warmup window where Claude Code sends degraded stdin for
+	// extended periods.
+	if shouldSuppressOutput(ctx.Stdin, ctx.RateLimits) {
+		debugLog("main", "stdin has no identity context and no rate-limit data, suppressing output")
 		return
 	}
 
@@ -161,4 +163,21 @@ func main() {
 			WidgetCount: result.WidgetCount,
 		})
 	}
+}
+
+// shouldSuppressOutput reports whether main should emit nothing to stdout.
+// Returns true only when stdin has no session identity AND the API-side
+// rate-limit cache has no usable bucket either. When at least one rate-limit
+// bucket is present, render anyway so the status line surfaces account-global
+// 5h/7d signals during long degraded-stdin warmup windows.
+func shouldSuppressOutput(stdin StdinInput, rl *UsageLimits) bool {
+	noIdentity := stdin.Workspace.CurrentDir == "" &&
+		stdin.Model.ID == "" && stdin.Model.DisplayName == "" &&
+		stdin.ContextWindow.ContextWindowSize <= 0
+	if !noIdentity {
+		return false
+	}
+	hasRateLimitData := rl != nil &&
+		(rl.FiveHour != nil || rl.SevenDay != nil || rl.SevenDaySonnet != nil)
+	return !hasRateLimitData
 }

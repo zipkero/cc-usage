@@ -17,9 +17,10 @@ import (
 const sessionStateTTL = 300 * time.Second
 
 // workspaceRestoreTTL limits how recently cached workspace/worktree fields
-// can be restored on degrade. Shorter than sessionStateTTL because a stale
-// cwd is more user-visible than stale cost/context numbers.
-const workspaceRestoreTTL = 30 * time.Second
+// can be restored on degrade. Aligned with sessionStateTTL so that long idle
+// periods followed by a degraded stdin still recover cwd; the previous 30s
+// ceiling caused the status line to disappear after a few minutes of idle.
+const workspaceRestoreTTL = sessionStateTTL
 
 const (
 	cacheLockTimeout    = 200 * time.Millisecond
@@ -196,6 +197,9 @@ func cleanOldSessionStates() {
 	patterns := []string{
 		filepath.Join(dir, "session-state-*.json"),
 		filepath.Join(dir, "session-state-*.json.lock"),
+		// atomicWriteFile leftover when a writer is SIGKILL'd before its
+		// defer os.Remove can run. Same TTL — these are short-lived by design.
+		filepath.Join(dir, ".session-state-*.json.tmp-*"),
 	}
 	for _, pattern := range patterns {
 		files, err := filepath.Glob(pattern)
@@ -211,6 +215,14 @@ func cleanOldSessionStates() {
 				_ = os.Remove(f)
 			}
 		}
+	}
+
+	// Legacy zombie: an older release wrote session-state.json (no key suffix).
+	// New code never writes this name, so any surviving file is stale. Match
+	// by exact path to avoid colliding with the keyed pattern above.
+	legacy := filepath.Join(dir, "session-state.json")
+	if info, err := os.Stat(legacy); err == nil && now.Sub(info.ModTime()) > sessionStateTTL {
+		_ = os.Remove(legacy)
 	}
 }
 

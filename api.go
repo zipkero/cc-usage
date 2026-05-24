@@ -58,7 +58,7 @@ var lastCleanup time.Time
 
 const (
 	apiURL           = "https://api.anthropic.com/api/oauth/usage"
-	userAgent        = "cc-usage/0.3.3"
+	userAgent        = "cc-usage/0.3.4"
 	apiBeta          = "oauth-2025-04-20"
 	staleCacheMaxAge = time.Hour
 	apiTimeout       = 2 * time.Second
@@ -78,6 +78,13 @@ func fetchUsageLimits(token string, cacheCfg CacheConfig) *UsageLimits {
 		return nil
 	}
 
+	// Run cleanup before the cache-hit short-circuit so the lock-file purge
+	// happens on every invocation (the previous placement only fired on
+	// cache miss, allowing cache-*.json.lock to accumulate when TTL hits
+	// dominated). The in-process lastCleanup throttle inside cleanOldCaches
+	// resets per fork-exec, so the goroutine still costs nothing on hit.
+	go cleanOldCaches()
+
 	hash := hashToken(token)
 	now := time.Now()
 	ttl := time.Duration(cacheCfg.TTLSeconds) * time.Second
@@ -89,8 +96,6 @@ func fetchUsageLimits(token string, cacheCfg CacheConfig) *UsageLimits {
 	}
 
 	// 2. API call
-	go cleanOldCaches()
-
 	resp, err := callAPI(token)
 	if err != nil {
 		debugLog("api", "API call failed: %v", err)
