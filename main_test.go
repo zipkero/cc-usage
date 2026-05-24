@@ -92,55 +92,22 @@ func TestShouldSuppressOutput(t *testing.T) {
 	})
 }
 
-// v0.3.5: 빈 stdin이 들어와 degraded restore가 발화할 때 cost / context뿐 아니라
-// model까지 캐시에서 복원돼야 한다. 그렇지 않으면 fallback 캐시가 살아 있어도
-// 모델 위젯이 사라져 partial status line으로 보인다.
-func TestRestoreUsageFieldsRestoresModel(t *testing.T) {
+// degraded restore 발화 시 빈 cost / context_window 필드가 캐시에서
+// 복원되고, 신선한 값은 그대로 유지돼야 한다.
+func TestRestoreUsageFields(t *testing.T) {
 	cached := &StdinInput{}
-	cached.Model.ID = "claude-opus-4-7"
-	cached.Model.DisplayName = "Opus 4.7"
 	cached.Cost.TotalCostUsd = 1.25
 	cached.ContextWindow.TotalInputTokens = 50000
 	cached.ContextWindow.ContextWindowSize = 200000
 
-	t.Run("empty stdin restores all three", func(t *testing.T) {
+	t.Run("empty stdin restores cost and context", func(t *testing.T) {
 		stdin := StdinInput{}
 		restoreUsageFields(&stdin, cached)
-		if stdin.Model.ID != "claude-opus-4-7" {
-			t.Fatalf("model.id = %q, want claude-opus-4-7", stdin.Model.ID)
-		}
-		if stdin.Model.DisplayName != "Opus 4.7" {
-			t.Fatalf("model.display_name = %q, want Opus 4.7", stdin.Model.DisplayName)
-		}
 		if stdin.Cost.TotalCostUsd != 1.25 {
 			t.Fatalf("cost = %.4f, want 1.25", stdin.Cost.TotalCostUsd)
 		}
 		if stdin.ContextWindow.TotalInputTokens != 50000 {
 			t.Fatalf("ctx tokens = %d, want 50000", stdin.ContextWindow.TotalInputTokens)
-		}
-	})
-
-	t.Run("fresh model.id wins", func(t *testing.T) {
-		stdin := StdinInput{}
-		stdin.Model.ID = "claude-haiku-fresh"
-		restoreUsageFields(&stdin, cached)
-		if stdin.Model.ID != "claude-haiku-fresh" {
-			t.Fatalf("model.id = %q, want fresh claude-haiku-fresh", stdin.Model.ID)
-		}
-		if stdin.Model.DisplayName != "" {
-			t.Fatalf("model.display_name = %q, want empty (fresh model.id present)", stdin.Model.DisplayName)
-		}
-	})
-
-	t.Run("fresh model.display_name wins", func(t *testing.T) {
-		stdin := StdinInput{}
-		stdin.Model.DisplayName = "Custom"
-		restoreUsageFields(&stdin, cached)
-		if stdin.Model.DisplayName != "Custom" {
-			t.Fatalf("model.display_name = %q, want fresh Custom", stdin.Model.DisplayName)
-		}
-		if stdin.Model.ID != "" {
-			t.Fatalf("model.id = %q, want empty (fresh model.display_name present)", stdin.Model.ID)
 		}
 	})
 
@@ -168,7 +135,7 @@ func TestRestoreUsageFieldsRestoresModel(t *testing.T) {
 	t.Run("nil cached is no-op", func(t *testing.T) {
 		stdin := StdinInput{}
 		restoreUsageFields(&stdin, nil)
-		if stdin.Model.ID != "" || stdin.Cost.TotalCostUsd != 0 {
+		if stdin.Cost.TotalCostUsd != 0 {
 			t.Fatalf("nil cached mutated stdin: %#v", stdin)
 		}
 	})

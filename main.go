@@ -73,19 +73,9 @@ func main() {
 	translations := loadTranslations(cfg.Language)
 	debugLog("main", "translations loaded: lang=%s", cfg.Language)
 
-	// Load cached session state. When stdin arrives empty (no session id,
-	// remote, agent, transcript, or cwd) sessionCacheKey() returns "" and the
-	// keyed lookup misses even if a valid cache exists on disk. Fall back to
-	// the most-recent on-disk session-state so an empty stdin can still
-	// restore the prior render.
+	// Load cached session state.
 	cacheKey := sessionCacheKey(input)
 	cached := loadSessionState(cacheKey)
-	if cached == nil && cacheKey == "" {
-		cached = loadMostRecentSessionState()
-		if cached != nil {
-			debugLog("main", "empty stdin → fallback to most-recent session cache")
-		}
-	}
 
 	ctx := &Context{
 		Stdin:        input,
@@ -170,21 +160,13 @@ func main() {
 	}
 }
 
-// restoreUsageFields fills empty model / cost / context_window fields on
-// stdin from a cached snapshot. Each field is restored independently so a
-// partially-degraded stdin keeps whatever fresh data it does carry. Pure
-// function; safe to test without spinning up main().
-//
-// Model is part of the identity bundle: an empty stdin loses model too, so
-// without explicit restoration the model widget vanishes whenever cost /
-// context restore fires. Skip restoration when stdin already has either half
-// of the model identity — fresh stdin always wins.
+// restoreUsageFields fills empty cost / context_window fields on stdin from a
+// cached snapshot. Each field is restored independently so a partially-degraded
+// stdin keeps whatever fresh data it does carry. Pure function; safe to test
+// without spinning up main().
 func restoreUsageFields(stdin *StdinInput, cached *StdinInput) {
 	if stdin == nil || cached == nil {
 		return
-	}
-	if stdin.Model.ID == "" && stdin.Model.DisplayName == "" {
-		stdin.Model = cached.Model
 	}
 	if stdin.Cost.TotalCostUsd <= 0 {
 		stdin.Cost = cached.Cost
