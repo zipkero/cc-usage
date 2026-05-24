@@ -11,7 +11,7 @@ my-project (main) │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25 �
 ## Features
 
 - Zero dependency (Go 표준 라이브러리만 사용)
-- 크로스 플랫폼 (macOS arm64/amd64, Linux amd64, Windows amd64)
+- 크로스 플랫폼 (macOS arm64/amd64, Linux amd64/arm64, Windows amd64)
 - 모듈러 위젯 시스템
 - 8개 컬러 테마 (default, minimal, catppuccin, dracula, gruvbox, nord, tokyoNight, solarized)
 - 다국어 지원 (English, 한국어)
