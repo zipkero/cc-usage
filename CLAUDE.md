@@ -125,12 +125,10 @@ DEBUG=cc-usage ./dist/cc-usage <<< '{...}'   # 또는 DEBUG=1
 
 | 파일 | 용도 |
 |------|------|
-| `DESIGN.md` | 코어 시스템 스펙 (Plugin 계약, stdin 구조, 위젯 명세) |
-| `ROADMAP.md` | Phase 2~8 확장 위젯 스펙 (analytics 계열) |
-| `PLAN.md` | Phase별 Task + Exit Criteria. 검증 완료 시 체크 |
-| `IMPLEMENT.md` | 구현 전략 + 진행 상태. 구현 완료 시 체크 |
+| `DESIGN.md` | MVP 시점의 코어 시스템 스펙 reference (Plugin 계약, stdin 구조, 아키텍처 도식). 일부 historical 흔적은 현 코드와 어긋날 수 있음 — 코드가 정답 |
+| `ROADMAP.md` | 미구현 확장 위젯의 historical 의도·스펙 기록. 새 위젯 도입 검토 시 참고 |
 
-> 설계 문서 내 `> **TODO(...)**` 블록은 구현 시 판단이 필요한 항목. 해당 위젯 구현 전에 반드시 읽고 결정할 것.
+> 진행 상태 트래커는 `docs/<feature-dir>/` 아래의 spec/analysis/implement.md가 담당한다. 설계 문서 안의 `> **TODO(...)**` 블록은 reference 차원의 메모이며, 실제 구현 결정은 해당 feature spec에서 commit한다.
 
 ## 배포
 
