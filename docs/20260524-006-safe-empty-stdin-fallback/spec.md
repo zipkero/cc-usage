@@ -20,7 +20,7 @@ cc-usage가 Claude Code의 status line 호출에서 **빈 또는 거의 빈 stdi
 - 출력 채널 규칙 유지: stdout은 위젯 출력 전용, stderr는 debug/error 전용 (CLAUDE.md §출력).
 - 호출당 추가 오버헤드 상한: status line은 자주 호출되므로 fallback 경로가 추가하는 I/O는 기존 `cacheLockTimeout = 200ms`와 같은 차수 안에서 처리되어야 한다.
 - 동시성 안전성: 다중 cc-usage 인스턴스가 같은 캐시 파일에 접근하는 상황에서도 race·panic이 없어야 한다.
-- 기존 TTL 정책과 정합: `sessionStateTTL = 300s`, `workspaceRestoreTTL = sessionStateTTL` 정합성을 깨지 않는다.
+- TTL 정책 분리: `sessionStateTTL = 300s`는 캐시 만료 기준으로 유지하되, `workspaceRestoreTTL`은 **stale cwd 노출 위험 최소화**를 위해 짧은 값으로 분리 운용한다 (v0.3.4에서 `sessionStateTTL`과 동일하게 늘린 것을 되돌릴 수 있다). 구체 값은 ANALYSIS 단계에서 결정.
 - 빈 stdin을 보내는 Claude Code 동작은 외부 변수로 가정한다: cc-usage가 이 동작 자체를 fix하지 않으며, 패턴 변경 시에도 본 fallback 로직이 silently 동작해야 한다.
 - 워크스페이스 식별을 위해 새로 의존하는 신호(예: Claude Code 환경변수, `os.Getwd()` 등)는 부재해도 안전한 fallback이 보장되어야 한다.
 
@@ -55,3 +55,5 @@ cc-usage가 Claude Code의 status line 호출에서 **빈 또는 거의 빈 stdi
 9. 다중 워크스페이스를 빠르게 전환하는 시나리오(워크스페이스 A → B → A 순으로 5분 안에 진입, 각 워크스페이스에서 빈 stdin 다수 발생)에서 어느 시점에도 A의 데이터가 B 세션에, 또는 그 반대로 표시되지 않는다. — UI/Library 관찰: 워크스페이스 전환 시퀀스를 시뮬레이션한 통합 테스트에서 cross-workspace 노출 0회.
 
 10. fallback 도입 후 `SemVer` patch bump 정책(CLAUDE.md §버전 정책)에 따라 `Makefile`, `.claude-plugin/plugin.json`, `api.go`의 `userAgent` 세 곳이 동일한 새 버전으로 갱신되어 `/plugin` UI가 update를 감지할 수 있다. — CLI 관찰: `./dist/cc-usage --version`이 새 버전을 출력하고, 세 파일의 grep 결과가 일치한다.
+
+11. 같은 session 안에서 사용자가 `cd`(또는 동등한 워크스페이스 이동)로 다른 디렉토리로 옮긴 직후 stdin이 workspace만 비어 도착하는 경우, `workspaceRestoreTTL` 이내라도 **cached `Workspace.CurrentDir`이 현재 워크스페이스 식별 신호(env/`os.Getwd()`)와 일치하지 않으면 cached workspace를 복원하지 않는다.** stale cwd가 화면에 노출되는 시간 창은 v0.3.4 설정(300s)에서 크게 단축된다. — UI 관찰: session 안 `cd` 직후 빈 workspace stdin이 와도 직전 디렉토리의 cwd/projectInfo가 화면에 나타나지 않는다.

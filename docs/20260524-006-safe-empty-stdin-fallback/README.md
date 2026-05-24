@@ -7,7 +7,7 @@ Claude Code가 cc-usage에 빈 stdin을 지속적으로 보내는 상황에서 s
 ## 상태
 
 - [x] SPEC
-- [ ] ANALYSIS
+- [x] ANALYSIS
 - [ ] IMPLEMENT
 
 ## 문서
@@ -19,3 +19,4 @@ Claude Code가 cc-usage에 빈 stdin을 지속적으로 보내는 상황에서 s
 ## 작업 히스토리
 
 - 2026-05-24: SPEC 작성
+- 2026-05-24: ANALYSIS 작성
