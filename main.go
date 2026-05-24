@@ -73,9 +73,19 @@ func main() {
 	translations := loadTranslations(cfg.Language)
 	debugLog("main", "translations loaded: lang=%s", cfg.Language)
 
-	// Load cached session state
+	// Load cached session state. When stdin arrives empty (no session id,
+	// remote, agent, transcript, or cwd) sessionCacheKey() returns "" and the
+	// keyed lookup misses even if a valid cache exists on disk. Fall back to
+	// the most-recent on-disk session-state so an empty stdin can still
+	// restore the prior render.
 	cacheKey := sessionCacheKey(input)
 	cached := loadSessionState(cacheKey)
+	if cached == nil && cacheKey == "" {
+		cached = loadMostRecentSessionState()
+		if cached != nil {
+			debugLog("main", "empty stdin → fallback to most-recent session cache")
+		}
+	}
 
 	ctx := &Context{
 		Stdin:        input,
@@ -110,12 +120,7 @@ func main() {
 
 		if usageDegraded {
 			debugLog("main", "degraded input (widgets=%d, cached=%d), restoring usage fields from cache", result.WidgetCount, cached.WidgetCount)
-			if ctx.Stdin.Cost.TotalCostUsd <= 0 {
-				ctx.Stdin.Cost = cached.CachedStdin.Cost
-			}
-			if ctx.Stdin.ContextWindow.TotalInputTokens+ctx.Stdin.ContextWindow.TotalOutputTokens == 0 {
-				ctx.Stdin.ContextWindow = cached.CachedStdin.ContextWindow
-			}
+			restoreUsageFields(&ctx.Stdin, cached.CachedStdin)
 		}
 
 		if costRegressed {
@@ -162,6 +167,30 @@ func main() {
 			CachedStdin: &snapshot,
 			WidgetCount: result.WidgetCount,
 		})
+	}
+}
+
+// restoreUsageFields fills empty model / cost / context_window fields on
+// stdin from a cached snapshot. Each field is restored independently so a
+// partially-degraded stdin keeps whatever fresh data it does carry. Pure
+// function; safe to test without spinning up main().
+//
+// Model is part of the identity bundle: an empty stdin loses model too, so
+// without explicit restoration the model widget vanishes whenever cost /
+// context restore fires. Skip restoration when stdin already has either half
+// of the model identity — fresh stdin always wins.
+func restoreUsageFields(stdin *StdinInput, cached *StdinInput) {
+	if stdin == nil || cached == nil {
+		return
+	}
+	if stdin.Model.ID == "" && stdin.Model.DisplayName == "" {
+		stdin.Model = cached.Model
+	}
+	if stdin.Cost.TotalCostUsd <= 0 {
+		stdin.Cost = cached.Cost
+	}
+	if stdin.ContextWindow.TotalInputTokens+stdin.ContextWindow.TotalOutputTokens == 0 {
+		stdin.ContextWindow = cached.ContextWindow
 	}
 }
 

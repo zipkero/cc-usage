@@ -145,6 +145,17 @@ func loadSessionState(cacheKey string) *SessionState {
 	if path == "" {
 		return nil
 	}
+	return loadSessionStateByPath(path)
+}
+
+// loadSessionStateByPath reads + validates a single session-state file. Shared
+// between keyed loadSessionState and the directory-scanning
+// loadMostRecentSessionState fallback so TTL and legacy-format checks stay
+// consistent across both entry points.
+func loadSessionStateByPath(path string) *SessionState {
+	if path == "" {
+		return nil
+	}
 	if _, err := os.Stat(path); err != nil {
 		debugLog("cache", "session state read error: %v", err)
 		return nil
@@ -169,6 +180,63 @@ func loadSessionState(cacheKey string) *SessionState {
 		return nil
 	}
 	return &state
+}
+
+// loadMostRecentSessionState picks the freshest non-expired session-state file
+// on disk and loads it. Used as a last-resort fallback when sessionCacheKey()
+// yields "" because stdin arrived empty — without this, an empty stdin would
+// lose all prior session context even though a valid cache exists on disk for
+// some other key.
+func loadMostRecentSessionState() *SessionState {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(home, ".cache", "cc-usage")
+	return loadMostRecentSessionStateFrom(dir)
+}
+
+// loadMostRecentSessionStateFrom is the testable core of
+// loadMostRecentSessionState. Scans dir for session-state-*.json files
+// (deliberately ignoring .lock and dot-prefixed .tmp-* leftovers), picks the
+// one with the most recent ModTime, and returns its parsed state if still
+// within sessionStateTTL.
+func loadMostRecentSessionStateFrom(dir string) *SessionState {
+	pattern := filepath.Join(dir, "session-state-*.json")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		debugLog("cache", "most-recent glob error: %v", err)
+		return nil
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+
+	var newestPath string
+	var newestMTime time.Time
+	for _, path := range matches {
+		base := filepath.Base(path)
+		// Defensive: glob already excludes .lock and dot-prefixed .tmp-*
+		// (those don't end in .json or start with "session-state-"), but
+		// pin the contract explicitly so future glob tweaks don't silently
+		// regress.
+		if !strings.HasPrefix(base, "session-state-") || !strings.HasSuffix(base, ".json") {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			debugLog("cache", "most-recent stat %s: %v", path, err)
+			continue
+		}
+		if info.ModTime().After(newestMTime) {
+			newestMTime = info.ModTime()
+			newestPath = path
+		}
+	}
+	if newestPath == "" {
+		return nil
+	}
+	return loadSessionStateByPath(newestPath)
 }
 
 // lastSessionStateCleanup throttles session-state cleanup to once per hour.
