@@ -56,9 +56,15 @@ type cacheEntry struct {
 // lastCleanup tracks when old cache files were last purged.
 var lastCleanup time.Time
 
+// cleanOldCachesFn is the indirection used by fetchUsageLimits so tests can
+// assert the v0.3.4 baseline guarantee: cleanup must fire on every invocation
+// including cache hits. Production code uses cleanOldCaches directly; only
+// fetchUsageLimits goes through this variable.
+var cleanOldCachesFn = cleanOldCaches
+
 const (
 	apiURL           = "https://api.anthropic.com/api/oauth/usage"
-	userAgent        = "cc-usage/0.3.6"
+	userAgent        = "cc-usage/0.3.7"
 	apiBeta          = "oauth-2025-04-20"
 	staleCacheMaxAge = time.Hour
 	apiTimeout       = 2 * time.Second
@@ -83,7 +89,8 @@ func fetchUsageLimits(token string, cacheCfg CacheConfig) *UsageLimits {
 	// cache miss, allowing cache-*.json.lock to accumulate when TTL hits
 	// dominated). The in-process lastCleanup throttle inside cleanOldCaches
 	// resets per fork-exec, so the goroutine still costs nothing on hit.
-	go cleanOldCaches()
+	// Goes through cleanOldCachesFn so tests can assert this baseline.
+	go cleanOldCachesFn()
 
 	hash := hashToken(token)
 	now := time.Now()

@@ -73,9 +73,10 @@ func main() {
 	translations := loadTranslations(cfg.Language)
 	debugLog("main", "translations loaded: lang=%s", cfg.Language)
 
-	// Load cached session state.
+	// Load cached session state, falling back to a cwd-based scan when stdin
+	// is too degraded to produce a cache key (SPEC §5.1, §5.4, ANALYSIS §3.2).
 	cacheKey := sessionCacheKey(input)
-	cached := loadSessionState(cacheKey)
+	cached := resolveCachedSessionState(cacheKey, time.Now())
 
 	ctx := &Context{
 		Stdin:        input,
@@ -98,7 +99,8 @@ func main() {
 		costRegressed := shouldRestoreCost(ctx.Stdin, cached, time.Now())
 
 		restoreWorkspace := workspaceStale && cached.SavedAt > 0 &&
-			time.Since(time.Unix(cached.SavedAt, 0)) < workspaceRestoreTTL
+			time.Since(time.Unix(cached.SavedAt, 0)) < workspaceRestoreTTL &&
+			shouldRestoreWorkspace(cached.CachedStdin.Workspace.CurrentDir)
 
 		if restoreWorkspace {
 			debugLog("main", "workspace empty, restoring from cache (age < %s)", workspaceRestoreTTL)
@@ -158,6 +160,79 @@ func main() {
 			WidgetCount: result.WidgetCount,
 		})
 	}
+}
+
+// resolveCachedSessionState loads the session cache for the active stdin,
+// transparently falling back to a cwd-based scan when stdin is so degraded
+// that sessionCacheKey returned "" (SPEC §5.1, §5.4, ANALYSIS §3.2, §12 D2).
+//
+// Order of resolution:
+//  1. cacheKey != "": load the per-session file. No fallback in this branch
+//     even if the load misses — a known session that lost its cache file
+//     shouldn't silently adopt a sibling workspace's last render.
+//  2. cacheKey == "" and direct load is nil: try fallbackByWorkspaceCwd.
+//     Only fires for stdin without any identity hook (no session/agent/
+//     transcript/cwd). The matcher itself enforces exact normalized-cwd
+//     equality + sessionStateTTL, so cross-workspace exposure is impossible.
+//
+// fallback never populates RateLimits — the on-disk SessionState is written
+// with RateLimits stripped (see main()'s save block), and the API-cache path
+// in main() supplies fresh 5h/7d values regardless of which branch ran here.
+func resolveCachedSessionState(cacheKey string, now time.Time) *SessionState {
+	cached := loadSessionState(cacheKey)
+	if cacheKey == "" && cached == nil {
+		return fallbackByWorkspaceCwd(now)
+	}
+	return cached
+}
+
+// fallbackByWorkspaceCwd resolves the empty-stdin fallback (SPEC §5.1, §5.4).
+// Returns a SessionState only when (a) the current cwd can be identified via
+// detectCurrentCwd and (b) loadByWorkspaceCwd finds a non-expired match for
+// exactly that cwd. Returns nil in every other case — including missing home
+// dir, unknown cwd, no candidate, or all candidates expired. Indirected through
+// a package-level var so tests can replace cwd / matcher dependencies without
+// having to seed real cache files under HOME.
+var fallbackByWorkspaceCwd = func(now time.Time) *SessionState {
+	cwd, source := detectCurrentCwdWithSource()
+	if cwd == "" {
+		debugLog("fallback", "empty stdin -> no cwd signal (env miss, getwd miss) -> suppress/partial")
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		debugLog("fallback", "empty stdin -> no cache for cwd=%s source=%s (home dir unavailable)", cwd, source)
+		return nil
+	}
+	cacheDir := filepath.Join(home, ".cache", "cc-usage")
+	state := loadByWorkspaceCwd(cacheDir, cwd, now)
+	if state == nil {
+		debugLog("fallback", "empty stdin -> no cache for cwd=%s source=%s", cwd, source)
+		return nil
+	}
+	debugLog("fallback", "empty stdin -> matched cache via cwd=%s source=%s", cwd, source)
+	return state
+}
+
+// shouldRestoreWorkspace는 workspace 복원의 stale-cwd 가드(SPEC §5.11,
+// ANALYSIS §5.2)다. 같은 session 안에서 cd로 다른 워크스페이스로 이동한 직후
+// 빈 workspace stdin이 도착하면 cached Workspace.CurrentDir는 직전 디렉토리(A)를
+// 가리키지만 사용자는 이미 B에 있다. 그대로 복원하면 화면에 A의 cwd/projectInfo가
+// 노출되므로, detectCurrentCwd로 얻은 현재 신호와 정규화 기준 정확 일치할 때만
+// true를 반환한다. 현재 cwd를 식별할 수 없으면(env/getwd 모두 실패) cross-workspace
+// 노출 위험을 피하기 위해 복원 자체를 skip. cost/context 등 비-워크스페이스 복원은
+// 이 가드의 영향을 받지 않는다.
+func shouldRestoreWorkspace(cachedCwd string) bool {
+	currentCwd := detectCurrentCwd()
+	if currentCwd == "" {
+		debugLog("fallback", "empty stdin -> workspace restore blocked: cached_cwd=%s current_cwd=<unknown>", cachedCwd)
+		return false
+	}
+	if normalizeCwd(cachedCwd) != currentCwd {
+		debugLog("fallback", "empty stdin -> workspace restore blocked: cached_cwd=%s current_cwd=%s", cachedCwd, currentCwd)
+		return false
+	}
+	return true
 }
 
 // restoreUsageFields fills empty cost / context_window fields on stdin from a

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -92,5 +94,81 @@ func TestCleanOldCachesHandlesLocks(t *testing.T) {
 	}
 	if _, err := os.Stat(otherFamilyLock); err != nil {
 		t.Fatalf("session-state-old.json.lock stat: %v, want present (different family)", err)
+	}
+}
+
+// task-013: v0.3.4 baseline 보존 — fetchUsageLimits는 cache-hit/miss 어느 쪽에서도
+// cleanOldCachesFn을 호출해야 한다. cleanup 호출이 cache-hit short-circuit 뒤로
+// 밀리면 cache-*.json.lock이 누적되는 v0.3.4 회귀가 재발한다.
+func TestFetchUsageLimitsAlwaysInvokesCleanOldCaches(t *testing.T) {
+	cases := []struct {
+		name      string
+		seedCache bool // true면 cache hit, false면 miss → API 실패 경로
+	}{
+		{"cache hit", true},
+		{"cache miss", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+
+			// cleanOldCachesFn을 카운팅 fake로 교체. fetchUsageLimits 안에서
+			// goroutine으로 호출되므로 atomic + done 채널로 동기화.
+			origFn := cleanOldCachesFn
+			t.Cleanup(func() { cleanOldCachesFn = origFn })
+
+			var calls atomic.Int32
+			done := make(chan struct{}, 1)
+			cleanOldCachesFn = func() {
+				calls.Add(1)
+				select {
+				case done <- struct{}{}:
+				default:
+				}
+			}
+
+			token := "test-token"
+
+			if tc.seedCache {
+				// 캐시 hit를 강제하기 위해 fresh cache entry를 디스크에 사전 배치.
+				hash := hashToken(token)
+				cacheDir := filepath.Join(home, ".cache", "cc-usage")
+				if err := os.MkdirAll(cacheDir, 0755); err != nil {
+					t.Fatalf("mkdir cache dir: %v", err)
+				}
+				entry := cacheEntry{
+					Data:      &apiUsageResponse{},
+					Timestamp: time.Now(),
+				}
+				data, err := json.Marshal(entry)
+				if err != nil {
+					t.Fatalf("marshal entry: %v", err)
+				}
+				path := filepath.Join(cacheDir, "cache-"+hash+".json")
+				if err := os.WriteFile(path, data, 0644); err != nil {
+					t.Fatalf("write cache file: %v", err)
+				}
+			}
+			// cache miss 경로는 별도 setup 없이 API 호출이 실패(network)하면 됨.
+			// fetchUsageLimits는 staleFallback으로 nil을 돌려주지만, 본 테스트는
+			// cleanOldCachesFn 호출만 어서션하므로 결과값은 무관.
+
+			cfg := CacheConfig{TTLSeconds: 300}
+			_ = fetchUsageLimits(token, cfg)
+
+			// goroutine이 실제로 실행될 때까지 대기 (짧은 timeout).
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatalf("cleanOldCachesFn was not invoked within timeout (calls=%d)", calls.Load())
+			}
+
+			if got := calls.Load(); got < 1 {
+				t.Fatalf("cleanOldCachesFn invocations = %d, want >= 1", got)
+			}
+		})
 	}
 }

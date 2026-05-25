@@ -86,6 +86,63 @@ func TestSaveAndLoadSessionState(t *testing.T) {
 	}
 }
 
+// task-003: saveSessionState가 디스크 직렬화 직전에 Workspace.CurrentDir을
+// normalizeCwd로 정규화해 저장하는지 라운드트립으로 확인. 또한 호출자의
+// *StdinInput에는 정규화가 누설되지 않아야 한다(fallback 매칭 외 경로의
+// in-memory 시각 영향 0).
+func TestSaveSessionStateNormalizesWorkspaceCurrentDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+
+	workspaceDir := t.TempDir()
+	// 비정규 표기: trailing separator + `.` 세그먼트.
+	rawCwd := filepath.Join(workspaceDir, ".") + string(filepath.Separator)
+	wantCwd := normalizeCwd(rawCwd)
+	if wantCwd == rawCwd {
+		t.Fatalf("test setup: rawCwd %q is already normalized; expected normalizeCwd to change it", rawCwd)
+	}
+
+	input := StdinInput{SessionId: "task-003"}
+	input.Workspace.CurrentDir = rawCwd
+
+	saveSessionState("task-003", &SessionState{
+		CachedStdin: &input,
+		WidgetCount: 2,
+	})
+
+	// 호출자의 in-memory 값은 변경되지 않아야 한다 (사이드이펙트 없음).
+	if input.Workspace.CurrentDir != rawCwd {
+		t.Fatalf("caller-visible Workspace.CurrentDir mutated: got %q, want %q", input.Workspace.CurrentDir, rawCwd)
+	}
+
+	// 디스크에 직접 읽어 직렬화된 값 자체가 정규화됐는지 확인.
+	path := sessionStatePath("task-003")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read session state: %v", err)
+	}
+	var disk SessionState
+	if err := json.Unmarshal(data, &disk); err != nil {
+		t.Fatalf("unmarshal session state: %v", err)
+	}
+	if disk.CachedStdin == nil {
+		t.Fatalf("disk CachedStdin is nil")
+	}
+	if disk.CachedStdin.Workspace.CurrentDir != wantCwd {
+		t.Fatalf("disk Workspace.CurrentDir = %q, want %q (normalized)", disk.CachedStdin.Workspace.CurrentDir, wantCwd)
+	}
+
+	// loadSessionState 라운드트립에서도 동일하게 정규화 값이 보여야 한다.
+	loaded := loadSessionState("task-003")
+	if loaded == nil || loaded.CachedStdin == nil {
+		t.Fatalf("loadSessionState returned nil or empty CachedStdin")
+	}
+	if loaded.CachedStdin.Workspace.CurrentDir != wantCwd {
+		t.Fatalf("loaded Workspace.CurrentDir = %q, want %q (normalized)", loaded.CachedStdin.Workspace.CurrentDir, wantCwd)
+	}
+}
+
 func TestAtomicWriteFileReplacesValidJSON(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 
@@ -295,12 +352,17 @@ func TestCleanOldSessionStatesHandlesLocks(t *testing.T) {
 	}
 }
 
-// v0.3.4 회귀: workspaceRestoreTTL이 sessionStateTTL과 동등하게 유지되어야
-// idle 후 빈 stdin이 와도 cwd를 복원할 수 있다. 짧게 되돌리면 status line이
-// 30초 이상 idle 직후 사라지는 원래 증상이 재발한다.
-func TestWorkspaceRestoreTTLAlignedWithSessionStateTTL(t *testing.T) {
-	if workspaceRestoreTTL != sessionStateTTL {
-		t.Fatalf("workspaceRestoreTTL = %v, want %v (sessionStateTTL)", workspaceRestoreTTL, sessionStateTTL)
+// SPEC §5.11 / ANALYSIS §12 D5: workspaceRestoreTTL은 cwd 일치 가드(SPEC §5.11)
+// 다음에 위치한 2차 안전 한계로 60s를 넘지 않는다. 가드가 정확성을 책임지므로
+// 이 값은 stale cwd 노출 시간 창의 상한을 좁히는 역할만 한다. 값을 다시
+// sessionStateTTL(300s)에 맞추면 v0.3.4에서 관찰된 stale 노출 회귀로 되돌아간다.
+func TestWorkspaceRestoreTTLBoundedAt60s(t *testing.T) {
+	const want = 60 * time.Second
+	if workspaceRestoreTTL != want {
+		t.Fatalf("workspaceRestoreTTL = %v, want %v", workspaceRestoreTTL, want)
+	}
+	if workspaceRestoreTTL >= sessionStateTTL {
+		t.Fatalf("workspaceRestoreTTL = %v must be shorter than sessionStateTTL = %v", workspaceRestoreTTL, sessionStateTTL)
 	}
 }
 
@@ -417,6 +479,248 @@ func TestCleanOldSessionStatesKeepsFreshLegacy(t *testing.T) {
 
 	if _, err := os.Stat(legacy); err != nil {
 		t.Fatalf("fresh legacy session-state.json removed unexpectedly: %v", err)
+	}
+}
+
+// task-001: normalizeCwd가 EvalSymlinks 가능 경로는 평가된 결과를, 실패 경로는
+// filepath.Clean 결과를 반환하고 빈 입력은 빈 문자열을 반환하는지 검증.
+func TestNormalizeCwd(t *testing.T) {
+	t.Run("empty input returns empty string", func(t *testing.T) {
+		if got := normalizeCwd(""); got != "" {
+			t.Fatalf("normalizeCwd(\"\") = %q, want \"\"", got)
+		}
+	})
+
+	t.Run("trailing slash is cleaned", func(t *testing.T) {
+		dir := t.TempDir()
+		raw := dir + string(filepath.Separator)
+		want, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			t.Fatalf("EvalSymlinks(%q) failed: %v", dir, err)
+		}
+		if got := normalizeCwd(raw); got != want {
+			t.Fatalf("normalizeCwd(%q) = %q, want %q", raw, got, want)
+		}
+	})
+
+	t.Run("dot segment is collapsed", func(t *testing.T) {
+		dir := t.TempDir()
+		raw := filepath.Join(dir, ".")
+		want, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			t.Fatalf("EvalSymlinks(%q) failed: %v", dir, err)
+		}
+		if got := normalizeCwd(raw); got != want {
+			t.Fatalf("normalizeCwd(%q) = %q, want %q", raw, got, want)
+		}
+	})
+
+	t.Run("symlink is resolved to target", func(t *testing.T) {
+		base := t.TempDir()
+		target := filepath.Join(base, "real")
+		if err := os.MkdirAll(target, 0755); err != nil {
+			t.Fatalf("mkdir target: %v", err)
+		}
+		link := filepath.Join(base, "link")
+		if err := os.Symlink(target, link); err != nil {
+			t.Skipf("symlink not supported on this platform: %v", err)
+		}
+		want, err := filepath.EvalSymlinks(link)
+		if err != nil {
+			t.Fatalf("EvalSymlinks(%q) failed: %v", link, err)
+		}
+		got := normalizeCwd(link)
+		if got != want {
+			t.Fatalf("normalizeCwd(%q) = %q, want %q (resolved target)", link, got, want)
+		}
+	})
+
+	t.Run("nonexistent path falls back to Clean", func(t *testing.T) {
+		raw := filepath.Join(t.TempDir(), "does", "not", "exist", ".", "x")
+		want := filepath.Clean(raw)
+		if got := normalizeCwd(raw); got != want {
+			t.Fatalf("normalizeCwd(%q) = %q, want %q (Clean fallback)", raw, got, want)
+		}
+	})
+}
+
+// task-002: detectCurrentCwd가 세 분기 — env hit, env miss + getwd hit,
+// 둘 다 실패 — 에서 spec(SPEC §5.2/§5.3, ANALYSIS §12 D1)대로 동작하는지 검증.
+// 패키지 변수 detectCwdEnv·detectCwdGetwd를 일시 swap하는 방식으로 격리.
+func TestDetectCurrentCwd(t *testing.T) {
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+
+	t.Run("env hit returns normalized env value", func(t *testing.T) {
+		dir := t.TempDir()
+		raw := dir + string(filepath.Separator)
+		want, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			t.Fatalf("EvalSymlinks(%q) failed: %v", dir, err)
+		}
+		detectCwdEnv = func(key string) string {
+			if key != "CLAUDE_PROJECT_DIR" {
+				t.Fatalf("unexpected env key: %q", key)
+			}
+			return raw
+		}
+		detectCwdGetwd = func() (string, error) {
+			t.Fatalf("getwd must not be called when env hit")
+			return "", nil
+		}
+		if got := detectCurrentCwd(); got != want {
+			t.Fatalf("detectCurrentCwd() = %q, want %q (normalized env)", got, want)
+		}
+	})
+
+	t.Run("env miss + getwd hit returns normalized getwd value", func(t *testing.T) {
+		dir := t.TempDir()
+		want, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			t.Fatalf("EvalSymlinks(%q) failed: %v", dir, err)
+		}
+		detectCwdEnv = func(string) string { return "" }
+		detectCwdGetwd = func() (string, error) { return dir, nil }
+		if got := detectCurrentCwd(); got != want {
+			t.Fatalf("detectCurrentCwd() = %q, want %q (normalized getwd)", got, want)
+		}
+	})
+
+	t.Run("env miss + getwd error returns empty string", func(t *testing.T) {
+		detectCwdEnv = func(string) string { return "" }
+		detectCwdGetwd = func() (string, error) { return "", errors.New("getwd failed") }
+		if got := detectCurrentCwd(); got != "" {
+			t.Fatalf("detectCurrentCwd() = %q, want \"\"", got)
+		}
+	})
+}
+
+// task-004: loadByWorkspaceCwd가 정규화 정확 일치 + TTL + mtime newest 규칙을
+// 따라 적중·미적중·만료·빈 입력 네 케이스에서 spec(SPEC §5.1/§5.2/§5.7,
+// ANALYSIS §3.2/§4.2/§12 D2,D3)대로 동작하는지 검증한다. cross-workspace
+// 노출 0회 보장이 본 테스트의 핵심 목적이다.
+func TestLoadByWorkspaceCwd(t *testing.T) {
+	dir := t.TempDir()
+
+	cwdA := normalizeCwd(t.TempDir())
+	cwdB := normalizeCwd(t.TempDir())
+	cwdZ := normalizeCwd(t.TempDir())
+
+	writeState := func(t *testing.T, name, cwd string, savedAt time.Time) string {
+		t.Helper()
+		var stdin StdinInput
+		stdin.Workspace.CurrentDir = cwd
+		state := SessionState{
+			CachedStdin: &stdin,
+			WidgetCount: 2,
+			SavedAt:     savedAt.Unix(),
+		}
+		data, err := json.Marshal(state)
+		if err != nil {
+			t.Fatalf("marshal state: %v", err)
+		}
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		return path
+	}
+
+	now := time.Unix(1_700_000_000, 0)
+	pathA := writeState(t, "session-state-A.json", cwdA, now.Add(-30*time.Second))
+	_ = writeState(t, "session-state-B.json", cwdB, now.Add(-10*time.Second))
+
+	t.Run("matches cwd A and returns A state", func(t *testing.T) {
+		got := loadByWorkspaceCwd(dir, cwdA, now)
+		if got == nil {
+			t.Fatalf("loadByWorkspaceCwd(cwdA) = nil, want A state")
+		}
+		if got.CachedStdin == nil {
+			t.Fatalf("returned SessionState has nil CachedStdin")
+		}
+		if got.CachedStdin.Workspace.CurrentDir != cwdA {
+			t.Fatalf("returned CurrentDir = %q, want %q (cwdA)", got.CachedStdin.Workspace.CurrentDir, cwdA)
+		}
+	})
+
+	t.Run("returns nil for unknown cwd Z", func(t *testing.T) {
+		if got := loadByWorkspaceCwd(dir, cwdZ, now); got != nil {
+			t.Fatalf("loadByWorkspaceCwd(cwdZ) = %#v, want nil", got)
+		}
+	})
+
+	t.Run("returns nil for empty cwd", func(t *testing.T) {
+		if got := loadByWorkspaceCwd(dir, "", now); got != nil {
+			t.Fatalf("loadByWorkspaceCwd(empty) = %#v, want nil", got)
+		}
+	})
+
+	t.Run("returns nil when match is expired beyond sessionStateTTL", func(t *testing.T) {
+		// pathA SavedAt이 6분 전이 되도록 파일을 다시 써넣어 만료 시나리오를 만든다.
+		var stdin StdinInput
+		stdin.Workspace.CurrentDir = cwdA
+		expired := SessionState{
+			CachedStdin: &stdin,
+			WidgetCount: 2,
+			SavedAt:     now.Add(-6 * time.Minute).Unix(),
+		}
+		data, err := json.Marshal(expired)
+		if err != nil {
+			t.Fatalf("marshal expired: %v", err)
+		}
+		if err := os.WriteFile(pathA, data, 0644); err != nil {
+			t.Fatalf("rewrite pathA: %v", err)
+		}
+		if got := loadByWorkspaceCwd(dir, cwdA, now); got != nil {
+			t.Fatalf("loadByWorkspaceCwd(expired) = %#v, want nil", got)
+		}
+	})
+}
+
+// task-004: 같은 cwd로 저장된 캐시가 둘 이상 있을 때 mtime newest를 선택한다.
+// session 식별자가 달라 사실상 동일 워크스페이스에 대한 캐시가 둘 이상 남는
+// 경우(예: 동일 cwd로 새 session 시작)의 자연스러운 해소 규칙이다.
+func TestLoadByWorkspaceCwdPicksNewestModTime(t *testing.T) {
+	dir := t.TempDir()
+	cwd := normalizeCwd(t.TempDir())
+	now := time.Unix(1_700_000_000, 0)
+
+	write := func(name string, mtime time.Time) {
+		t.Helper()
+		var stdin StdinInput
+		stdin.SessionId = name
+		stdin.Workspace.CurrentDir = cwd
+		state := SessionState{
+			CachedStdin: &stdin,
+			WidgetCount: 2,
+			SavedAt:     now.Add(-30 * time.Second).Unix(),
+		}
+		data, err := json.Marshal(state)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		path := filepath.Join(dir, "session-state-"+name+".json")
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatalf("chtimes: %v", err)
+		}
+	}
+
+	write("older", now.Add(-time.Hour))
+	write("newer", now.Add(-time.Minute))
+
+	got := loadByWorkspaceCwd(dir, cwd, now)
+	if got == nil || got.CachedStdin == nil {
+		t.Fatalf("loadByWorkspaceCwd = nil, want newer state")
+	}
+	if got.CachedStdin.SessionId != "newer" {
+		t.Fatalf("selected SessionId = %q, want %q (newest mtime)", got.CachedStdin.SessionId, "newer")
 	}
 }
 
