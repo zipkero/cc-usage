@@ -192,6 +192,10 @@ func TestResolveCachedSessionStateEmptyKeyFallback(t *testing.T) {
 	}
 }
 
+// task-002 (degraded-cwd-fallback-relax): 분기 가드가 `primary == nil`로
+// 완화된 뒤에도 "primary 캐시 적중 시 fallback은 절대 호출되지 않는다"
+// (SPEC §5.5)는 그대로다. cacheKey 명의의 정상 캐시를 디스크에 미리
+// 깔아두고 fallback spy의 호출 횟수가 0임을 어서션해 회귀 보호한다.
 func TestResolveCachedSessionStateNormalStdinSkipsFallback(t *testing.T) {
 	origFallback := fallbackByWorkspaceCwd
 	t.Cleanup(func() { fallbackByWorkspaceCwd = origFallback })
@@ -202,19 +206,79 @@ func TestResolveCachedSessionStateNormalStdinSkipsFallback(t *testing.T) {
 		return &SessionState{}
 	}
 
-	// loadSessionState가 missing 파일이면 nil을 반환하므로, HOME을 비어 있는
-	// temp로 격리해 "정상 cacheKey지만 디스크 캐시는 부재"인 상태를 만든다.
-	// 이 분기에서도 fallback은 절대 호출되어선 안 된다.
+	// HOME swap으로 격리해 다른 캐시 파일의 간섭을 차단.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	got := resolveCachedSessionState("session-xyz", time.Now())
+	// 디스크에 cacheKey="session-primary-hit" 명의의 정상 SessionState를 깔아둔다.
+	// saveSessionState 경로를 그대로 통과시켜 SavedAt 채우기·정규화·atomic write를
+	// production과 동일하게 흉내내고, loadSessionState가 적중하도록 한다.
+	const cacheKey = "session-primary-hit"
+	var stdin StdinInput
+	stdin.SessionId = cacheKey
+	stdin.Workspace.CurrentDir = "/tmp/primary-hit"
+	stdin.Cost.TotalCostUsd = 0.99
+	stdin.ContextWindow.ContextWindowSize = 200000
+	saveSessionState(cacheKey, &SessionState{
+		CachedStdin: &stdin,
+		WidgetCount: 3,
+	})
+
+	got := resolveCachedSessionState(cacheKey, time.Now())
 	if calls != 0 {
-		t.Fatalf("fallback call count = %d, want 0 (cacheKey != \"\" must short-circuit)", calls)
+		t.Fatalf("fallback call count = %d, want 0 (primary hit must short-circuit)", calls)
 	}
-	if got != nil {
-		t.Fatalf("resolveCachedSessionState = %#v, want nil (no cache on disk)", got)
+	if got == nil || got.CachedStdin == nil {
+		t.Fatalf("resolveCachedSessionState = nil, want primary cache hit")
+	}
+	if got.CachedStdin.SessionId != cacheKey {
+		t.Fatalf("returned SessionId = %q, want %q (primary cache must win)",
+			got.CachedStdin.SessionId, cacheKey)
+	}
+	if got.CachedStdin.Cost.TotalCostUsd != 0.99 {
+		t.Fatalf("returned cost = %.4f, want 0.99 (primary cache payload expected)",
+			got.CachedStdin.Cost.TotalCostUsd)
+	}
+}
+
+// task-002 (degraded-cwd-fallback-relax): cacheKey가 비-빈 값이지만 그 키의
+// 디스크 캐시가 부재할 때, 분기 가드 완화로 인해 fallbackByWorkspaceCwd가
+// 호출되고 그 반환값이 그대로 caller에 전달되어야 한다(SPEC §5.1·§5.2).
+// 매처 본체는 fallbackByWorkspaceCwd spy로 short-circuit한다 — 매처 단의
+// 동작은 TestFallbackByWorkspaceCwdEndToEnd / TestFallbackFourPaths 등이 별도로
+// 커버하며, 여기서는 resolveCachedSessionState의 분기 동작만 격리해 검증한다.
+func TestResolveCachedSessionStatePrimaryMissFallsBackToCwd(t *testing.T) {
+	origFallback := fallbackByWorkspaceCwd
+	t.Cleanup(func() { fallbackByWorkspaceCwd = origFallback })
+
+	// HOME swap으로 cacheKey 명의의 디스크 캐시가 존재하지 않음을 보장한다.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	var sentinelStdin StdinInput
+	sentinelStdin.Workspace.CurrentDir = "/tmp/sibling-session"
+	sentinelStdin.Cost.TotalCostUsd = 4.20
+	sentinel := &SessionState{
+		CachedStdin: &sentinelStdin,
+		WidgetCount: 3,
+		SavedAt:     time.Now().Unix(),
+	}
+
+	calls := 0
+	fallbackByWorkspaceCwd = func(now time.Time) *SessionState {
+		calls++
+		return sentinel
+	}
+
+	got := resolveCachedSessionState("session-missing-on-disk", time.Now())
+	if calls != 1 {
+		t.Fatalf("fallback call count = %d, want 1 (primary miss must trigger fallback)", calls)
+	}
+	if got != sentinel {
+		t.Fatalf("resolveCachedSessionState = %#v, want sentinel SessionState %#v",
+			got, sentinel)
 	}
 }
 

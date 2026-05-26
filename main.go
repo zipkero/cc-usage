@@ -163,24 +163,26 @@ func main() {
 }
 
 // resolveCachedSessionState loads the session cache for the active stdin,
-// transparently falling back to a cwd-based scan when stdin is so degraded
-// that sessionCacheKey returned "" (SPEC §5.1, §5.4, ANALYSIS §3.2, §12 D2).
+// transparently falling back to a cwd-based scan whenever the primary
+// per-key load misses (SPEC §5.1, §5.4, ANALYSIS §3.2, §12 D2).
 //
 // Order of resolution:
-//  1. cacheKey != "": load the per-session file. No fallback in this branch
-//     even if the load misses — a known session that lost its cache file
-//     shouldn't silently adopt a sibling workspace's last render.
-//  2. cacheKey == "" and direct load is nil: try fallbackByWorkspaceCwd.
-//     Only fires for stdin without any identity hook (no session/agent/
-//     transcript/cwd). The matcher itself enforces exact normalized-cwd
-//     equality + sessionStateTTL, so cross-workspace exposure is impossible.
+//  1. Primary hit (cached != nil): return as-is. fallback is never consulted,
+//     so an active session's own cache always wins over sibling workspaces.
+//  2. Primary miss (cached == nil): try fallbackByWorkspaceCwd regardless of
+//     whether cacheKey was empty. This covers two degraded shapes with one
+//     branch — fully empty stdin (cacheKey == "") and stdin that carries a
+//     session_id whose per-key file is missing or in a legacy format.
+//     Cross-workspace exposure is not gated here; loadByWorkspaceCwd enforces
+//     exact normalized-cwd equality + sessionStateTTL, so a stale or foreign
+//     cwd can never bleed through.
 //
 // fallback never populates RateLimits — the on-disk SessionState is written
 // with RateLimits stripped (see main()'s save block), and the API-cache path
 // in main() supplies fresh 5h/7d values regardless of which branch ran here.
 func resolveCachedSessionState(cacheKey string, now time.Time) *SessionState {
 	cached := loadSessionState(cacheKey)
-	if cacheKey == "" && cached == nil {
+	if cached == nil {
 		return fallbackByWorkspaceCwd(now)
 	}
 	return cached
