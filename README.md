@@ -15,7 +15,7 @@ my-project (main) │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25 �
 - 모듈러 위젯 시스템
 - 8개 컬러 테마 (default, minimal, catppuccin, dracula, gruvbox, nord, tokyoNight, solarized)
 - 다국어 지원 (English, 한국어)
-- Display mode: compact, normal, detailed, custom
+- Display mode: compact, custom
 
 ## Installation
 
@@ -99,7 +99,7 @@ make build-local   # dist/cc-usage 생성
 | 필드 | 기본값 | 설명 |
 |------|--------|------|
 | `language` | `"auto"` | `"auto"`, `"en"`, `"ko"` |
-| `plan` | `"max"` | `"pro"`, `"max"` |
+| `plan` | `"max"` | `"pro"`, `"max"` (현재 미사용) |
 | `displayMode` | `"compact"` | `"compact"` 또는 `"custom"` (custom은 `preset`/`lines` 정의 시 자동 적용) |
 | `theme` | `"default"` | 8개 테마 중 선택 |
 | `separator` | `"pipe"` | `"pipe"`, `"space"`, `"dot"`, `"arrow"` |

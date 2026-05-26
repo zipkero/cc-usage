@@ -8,8 +8,22 @@ Install the cc-usage status line into Claude Code settings, pinning the path to 
 
 Behavior:
 1. Detect OS (`darwin` / `linux` / `windows`).
-2. Prefer project settings at `.claude/settings.json` if the user asks for project scope.
-   Otherwise use user settings at `~/.claude/settings.json`.
+2. Locate the target settings file:
+   - Search these candidates in order and pick the first one that already
+     contains a `statusLine` key:
+     1. `.claude/settings.local.json` (project, per-machine, git-ignored)
+     2. `.claude/settings.json` (project, shared)
+     3. `~/.claude/settings.local.json` (user, per-machine)
+     4. `~/.claude/settings.json` (user, shared)
+   - If `statusLine` is found in any of the above, **update in-place there**
+     (do not move it to another file — preserve the user's chosen scope).
+   - If none contain `statusLine`, default to `~/.claude/settings.local.json`
+     (per-machine, no risk of leaking a host-specific path into shared config).
+     Create the file with `{}` if it does not exist; create the parent
+     directory if needed.
+   - If the user explicitly asks for project scope, use
+     `.claude/settings.local.json` instead and apply the same create-if-missing
+     rule.
 3. Preserve every existing JSON key. Only add or update the `statusLine` field.
 4. Resolve the binary path **from the marketplaces install location**, not the
    versioned cache:
@@ -37,7 +51,9 @@ Behavior:
 9. Show the exact diff before writing.
 
 Expected output:
-- Target settings file path (user vs project scope).
+- Target settings file path, including which candidate it matched (e.g.
+  "found existing statusLine in ~/.claude/settings.local.json — updating
+  in-place") or that the file was newly created.
 - The before/after `statusLine` block.
 - A one-line note if a stale `cache/<version>/` path was replaced (so the user
   sees why their previous setup was fragile).

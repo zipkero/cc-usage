@@ -54,7 +54,7 @@ Claude Code는 idle/reload 직후 종종 workspace나 사용량이 비어있는 
 1. `widget.Widget` 인터페이스 구현 — `ID()`, `GetData(ctx) (any, error)`, `Render(data, ctx) string`.
 2. 같은 파일의 `init()`에서 `registerWidget(yourWidget{})`.
 3. preset 문자(한 글자) 매핑이 필요하면 `widget.go`의 `presetCharToWidget`에 추가.
-4. 기본 레이아웃에 노출하려면 `displayPresets`(compact/normal/detailed) 수정.
+4. 기본 레이아웃에 노출하려면 `displayPresets`(현재 `compact`만 정의) 수정.
 
 ### 위젯 구현 규칙
 
