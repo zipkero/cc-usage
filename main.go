@@ -114,6 +114,16 @@ func main() {
 		return
 	}
 
+	// Warmup exception: identity is absent but rate-limit data is available.
+	// Restrict output to rate-limit widgets only so widgets that render
+	// unconditionally (like cost showing "$0.00") don't leak misleading values
+	// when no session identity is established (SPEC §5.3).
+	warmupOnly := isWarmupExceptionPath(ctx.Stdin, ctx.RateLimits)
+	if warmupOnly {
+		debugLog("main", "warmup exception: rendering rate-limit widgets only")
+		result = renderRateLimitOnly(ctx)
+	}
+
 	var partsOutput string
 	if len(result.Lines) > 0 {
 		partsOutput = strings.Join(result.Lines, "\n")
@@ -129,7 +139,7 @@ func main() {
 	// fields that were backfilled from the session cache in this call so that
 	// a degraded-only call cannot perpetuate cached values via repeated saves
 	// (SPEC §5.6, ANALYSIS §5.D, adopted D1).
-	if result.WidgetCount >= 2 {
+	if !warmupOnly && result.WidgetCount >= 2 {
 		snapshot := ctx.Stdin
 		snapshot.RateLimits = nil
 		stripRestoredFields(&snapshot, restoredMask)
@@ -230,4 +240,49 @@ func shouldSuppressOutput(stdin StdinInput, rl *UsageLimits) bool {
 	hasRateLimitData := rl != nil &&
 		(rl.FiveHour != nil || rl.SevenDay != nil || rl.SevenDaySonnet != nil)
 	return !hasRateLimitData
+}
+
+// isWarmupExceptionPath reports whether the status line should render only
+// rate-limit widgets — true precisely when identity is absent but rate-limit
+// data is available. Mirrors shouldSuppressOutput's identity check but the
+// rate-limit polarity is inverted (SPEC §5.3 warmup exception).
+func isWarmupExceptionPath(stdin StdinInput, rl *UsageLimits) bool {
+	noIdentity := stdin.Workspace.CurrentDir == "" &&
+		stdin.Model.ID == "" && stdin.Model.DisplayName == "" &&
+		stdin.ContextWindow.ContextWindowSize <= 0
+	if !noIdentity {
+		return false
+	}
+	return rl != nil && (rl.FiveHour != nil || rl.SevenDay != nil || rl.SevenDaySonnet != nil)
+}
+
+// renderRateLimitOnly orchestrates only the rate-limit widgets registered for
+// the warmup exception path. Cost / context / identity widgets are skipped so
+// the status line cannot leak a misleading "$0.00" or empty bar when the
+// session has no identity yet.
+func renderRateLimitOnly(ctx *Context) OrchestrateResult {
+	ids := []string{"rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"}
+	sep := renderSeparator(ctx.Config.Separator, getTheme(ctx.Config.Theme))
+	var parts []string
+	for _, id := range ids {
+		w, ok := registry[id]
+		if !ok {
+			continue
+		}
+		data, err := w.GetData(ctx)
+		if err != nil || data == nil {
+			continue
+		}
+		rendered := w.Render(data, ctx)
+		if rendered == "" {
+			continue
+		}
+		parts = append(parts, rendered)
+	}
+	result := OrchestrateResult{}
+	if len(parts) > 0 {
+		result.Lines = []string{strings.Join(parts, sep)}
+		result.WidgetCount = len(parts)
+	}
+	return result
 }

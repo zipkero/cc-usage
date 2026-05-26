@@ -1312,15 +1312,24 @@ func TestTask005WarmupExceptionPreserved(t *testing.T) {
 		Translations: trans,
 		RateLimits:   rateLimits,
 	}
-	result := orchestrate(ctx)
+	// warmup 분기 판정
+	if !isWarmupExceptionPath(emptyStdin, rateLimits) {
+		t.Fatal("(b) isWarmupExceptionPath=false; expected true for no-identity + rate-limit")
+	}
+
+	// warmup 분기에서는 rate-limit 위젯만 렌더되어야 함 — cost/context/model/projectInfo 누출 금지
+	result := renderRateLimitOnly(ctx)
 	combined := strings.Join(result.Lines, "\n")
 
-	// 5h 위젯이 렌더되면 "5h" 문자열이 포함되어야 함
 	if result.WidgetCount == 0 {
 		t.Errorf("(b) warmup: widgetCount=0, expected rate-limit widgets to render (output=%q)", combined)
 	}
 	if !strings.Contains(combined, "5h") {
 		t.Errorf("(b) warmup: '5h' not in output (got %q); rate-limit widget should render", combined)
+	}
+	// cost 위젯 누출 방지: "$" 문자열 미등장
+	if strings.Contains(combined, "$") {
+		t.Errorf("(b) warmup: cost widget leaked '$' into output (got %q); only rate-limit widgets should render (SPEC §5.3)", combined)
 	}
 }
 
