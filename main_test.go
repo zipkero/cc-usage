@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -95,59 +96,6 @@ func TestShouldSuppressOutput(t *testing.T) {
 	})
 }
 
-// degraded restore 발화 시 빈 cost / context_window 필드가 캐시에서
-// 복원되고, 신선한 값은 그대로 유지돼야 한다.
-func TestRestoreUsageFields(t *testing.T) {
-	cached := &StdinInput{}
-	cached.Cost.TotalCostUsd = 1.25
-	cached.ContextWindow.TotalInputTokens = 50000
-	cached.ContextWindow.ContextWindowSize = 200000
-
-	t.Run("empty stdin restores cost and context", func(t *testing.T) {
-		stdin := StdinInput{}
-		restoreUsageFields(&stdin, cached)
-		if stdin.Cost.TotalCostUsd != 1.25 {
-			t.Fatalf("cost = %.4f, want 1.25", stdin.Cost.TotalCostUsd)
-		}
-		if stdin.ContextWindow.TotalInputTokens != 50000 {
-			t.Fatalf("ctx tokens = %d, want 50000", stdin.ContextWindow.TotalInputTokens)
-		}
-	})
-
-	t.Run("fresh cost wins", func(t *testing.T) {
-		stdin := StdinInput{}
-		stdin.Cost.TotalCostUsd = 0.5
-		restoreUsageFields(&stdin, cached)
-		if stdin.Cost.TotalCostUsd != 0.5 {
-			t.Fatalf("cost = %.4f, want fresh 0.5", stdin.Cost.TotalCostUsd)
-		}
-	})
-
-	t.Run("fresh context wins", func(t *testing.T) {
-		stdin := StdinInput{}
-		stdin.ContextWindow.TotalInputTokens = 10
-		restoreUsageFields(&stdin, cached)
-		if stdin.ContextWindow.TotalInputTokens != 10 {
-			t.Fatalf("ctx tokens = %d, want fresh 10", stdin.ContextWindow.TotalInputTokens)
-		}
-		if stdin.ContextWindow.ContextWindowSize != 0 {
-			t.Fatalf("ctx size = %d, want 0 (fresh tokens present, full struct kept fresh)", stdin.ContextWindow.ContextWindowSize)
-		}
-	})
-
-	t.Run("nil cached is no-op", func(t *testing.T) {
-		stdin := StdinInput{}
-		restoreUsageFields(&stdin, nil)
-		if stdin.Cost.TotalCostUsd != 0 {
-			t.Fatalf("nil cached mutated stdin: %#v", stdin)
-		}
-	})
-
-	t.Run("nil stdin is no-op", func(t *testing.T) {
-		// 패닉만 안 나면 통과.
-		restoreUsageFields(nil, cached)
-	})
-}
 
 // task-005: resolveCachedSessionState가 빈 cacheKey + 정상 stdin 두 경로에서
 // SPEC §5.1·§5.4 의도대로 동작하는지 검증한다.
@@ -906,45 +854,619 @@ func TestCdScenarioBlocksStaleWorkspaceRestore(t *testing.T) {
 			workspaceRestoreTTL)
 	}
 
-	// t1: cd to B + 빈 workspace stdin 도착. main.go의 복원 분기는
-	// `shouldRestoreWorkspace(cached.CachedStdin.Workspace.CurrentDir)` 결과에
-	// 의해 게이트된다. cwd 가드가 false면 stale A 경로가 화면에 복원되지 않는다.
+	// t1: cd to B + 빈 workspace stdin 도착. shouldRestoreFromSession이
+	// cwd-exact-match 가드를 포함하므로 eligibility=false를 반환해야 한다.
+	// cwd 가드가 false면 stale A 경로가 화면에 복원되지 않는다.
 	setCwd(dirB)
-	if shouldRestoreWorkspace(cached.CachedStdin.Workspace.CurrentDir) {
-		t.Fatalf("t1: guard returned true after cd A->B (cached=%q, current=%q); "+
+	emptyWorkspaceStdin := StdinInput{}
+	if shouldRestoreFromSession(emptyWorkspaceStdin, cached, time.Now()) {
+		t.Fatalf("t1: shouldRestoreFromSession returned true after cd A->B (cached=%q, current=%q); "+
 			"main.go would restore stale workspace and leak A onto the status line",
 			cached.CachedStdin.Workspace.CurrentDir, dirB)
 	}
 
-	// main.go의 restoreWorkspace 합성 조건도 동일하게 false임을 재구성해
-	// 어서션한다 — 가드가 빠지거나 분기 평가 순서가 바뀌는 회귀를 잡는다.
-	emptyWorkspaceStdin := StdinInput{}
-	workspaceStale := emptyWorkspaceStdin.Workspace.CurrentDir == "" &&
-		cached.CachedStdin.Workspace.CurrentDir != ""
-	withinTTL := cached.SavedAt > 0 &&
-		time.Since(time.Unix(cached.SavedAt, 0)) < workspaceRestoreTTL
-	restoreWorkspace := workspaceStale && withinTTL &&
-		shouldRestoreWorkspace(cached.CachedStdin.Workspace.CurrentDir)
-	if restoreWorkspace {
-		t.Fatalf("t1: restoreWorkspace composite = true after cd; "+
-			"workspaceStale=%v withinTTL=%v guard=false expected to dominate",
-			workspaceStale, withinTTL)
-	}
-
-	// t2: cd back to A. 동일한 cached cwd, 동일한 빈 workspace stdin이지만
-	// 이번엔 가드가 true를 반환해 복원이 허용된다. 가드가 cwd 정확 일치 기반임을
-	// 입증.
+	// t2: 같은 session 안에서 다시 A로 cd back. eligibility가 true로 돌아와
+	// 복원이 허용된다 — 가드가 cwd 정확 일치 기반임을 보여줌.
 	setCwd(dirA)
-	if !shouldRestoreWorkspace(cached.CachedStdin.Workspace.CurrentDir) {
-		t.Fatalf("t2: guard returned false after cd back to A (cached=%q, current=%q); "+
+	if !shouldRestoreFromSession(emptyWorkspaceStdin, cached, time.Now()) {
+		t.Fatalf("t2: shouldRestoreFromSession returned false after cd back to A (cached=%q, current=%q); "+
 			"normal restore path would be unreachable",
 			cached.CachedStdin.Workspace.CurrentDir, dirA)
 	}
-	restoreWorkspaceBack := workspaceStale && withinTTL &&
-		shouldRestoreWorkspace(cached.CachedStdin.Workspace.CurrentDir)
-	if !restoreWorkspaceBack {
-		t.Fatalf("t2: restoreWorkspace composite = false after cd back; "+
-			"workspaceStale=%v withinTTL=%v guard expected to be true",
-			workspaceStale, withinTTL)
+}
+
+// task-003: 새 atomic restore 흐름 end-to-end 검증.
+//
+// (a) 같은 cwd + fresh cached + 빈 stdin → projectInfo·model·context·cost 위젯이
+//     함께 살아남음 (stdout에 cwd basename, model id, cost, percent 문자열 포함).
+// (b) cwd mismatch 또는 SavedAt > workspaceRestoreTTL → shouldSuppressOutput
+//     발동 또는 캐시 복원 없이 절반 출력 미발생 (cost·context 단독 채워짐 금지).
+// (c) stdin이 일부 fresh(workspace만 fresh) + cached 가짐 → fresh workspace는
+//     cached로 덮이지 않고 model/cost/context는 cached에서 채워짐.
+//
+// orchestrate를 직접 호출해 deterministic하게 검증한다.
+func TestTask003AtomicRestoreFlowABC(t *testing.T) {
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+
+	// buildCached는 주어진 cwd/savedAt으로 SessionState를 만든다.
+	buildCached := func(cwd string, savedAt time.Time) *SessionState {
+		var cs StdinInput
+		cs.Workspace.CurrentDir = cwd
+		cs.Model.ID = "claude-opus-4-6"
+		cs.Model.DisplayName = "Opus"
+		cs.Cost.TotalCostUsd = 1.25
+		cs.ContextWindow.TotalInputTokens = 50000
+		cs.ContextWindow.TotalOutputTokens = 10000
+		cs.ContextWindow.ContextWindowSize = 200000
+		return &SessionState{
+			CachedStdin: &cs,
+			WidgetCount: 4,
+			SavedAt:     savedAt.Unix(),
+		}
+	}
+
+	buildCtx := func(stdin StdinInput) *Context {
+		cfg := loadConfig("")
+		trans := loadTranslations(cfg.Language)
+		return &Context{
+			Stdin:        stdin,
+			Config:       cfg,
+			Translations: trans,
+		}
+	}
+
+	now := time.Unix(1_700_000_000, 0)
+
+	t.Run("(a) same cwd + fresh cache + empty stdin -> all widgets survive", func(t *testing.T) {
+		cwd := normalizeCwd(t.TempDir())
+		detectCwdEnv = func(string) string { return "" }
+		detectCwdGetwd = func() (string, error) { return cwd, nil }
+
+		cached := buildCached(cwd, now.Add(-10*time.Second))
+		stdin := StdinInput{} // 완전히 빈 stdin
+
+		ctx := buildCtx(stdin)
+		result := orchestrate(ctx)
+		_ = result // 1차 결과 (채워지기 전)
+
+		if shouldRestoreFromSession(ctx.Stdin, cached, now) {
+			fillFromSessionCache(&ctx.Stdin, cached)
+			result = orchestrate(ctx)
+		}
+
+		// cwd basename, model id, cost, percent가 모두 렌더 결과에 있어야 함.
+		combined := ""
+		for _, line := range result.Lines {
+			combined += line
+		}
+
+		if result.WidgetCount < 3 {
+			t.Fatalf("(a) widgetCount=%d, want >= 3 (projectInfo/model/context/cost should all survive)", result.WidgetCount)
+		}
+		if !containsAny(combined, "claude-opus-4-6", "Opus") {
+			t.Errorf("(a) model not in output: %q", combined)
+		}
+		if !containsAny(combined, "1.25", "$1.25") {
+			t.Errorf("(a) cost not in output: %q", combined)
+		}
+	})
+
+	t.Run("(b) cwd mismatch -> no cache restoration, no half-populated output", func(t *testing.T) {
+		cwdCached := normalizeCwd(t.TempDir())
+		cwdCurrent := normalizeCwd(t.TempDir()) // 다른 cwd
+		detectCwdEnv = func(string) string { return "" }
+		detectCwdGetwd = func() (string, error) { return cwdCurrent, nil }
+
+		cached := buildCached(cwdCached, now.Add(-10*time.Second))
+		stdin := StdinInput{} // 빈 stdin
+
+		ctx := buildCtx(stdin)
+
+		// eligibility=false 여야 함
+		if shouldRestoreFromSession(ctx.Stdin, cached, now) {
+			t.Fatal("(b) shouldRestoreFromSession=true on cwd mismatch; expected false")
+		}
+		// fillFromSessionCache를 호출하지 않아 stdin은 그대로 빔.
+		// shouldSuppressOutput이 발동해야 함 (identity 없음, rate limits 없음).
+		if !shouldSuppressOutput(ctx.Stdin, nil) {
+			t.Fatal("(b) shouldSuppressOutput=false after cwd mismatch; expected suppress (no partial output)")
+		}
+	})
+
+	t.Run("(b) SavedAt > workspaceRestoreTTL -> no cache restoration", func(t *testing.T) {
+		cwd := normalizeCwd(t.TempDir())
+		detectCwdEnv = func(string) string { return "" }
+		detectCwdGetwd = func() (string, error) { return cwd, nil }
+
+		// SavedAt이 TTL 초과
+		cached := buildCached(cwd, now.Add(-(workspaceRestoreTTL+time.Second)))
+		stdin := StdinInput{}
+
+		ctx := buildCtx(stdin)
+		if shouldRestoreFromSession(ctx.Stdin, cached, now) {
+			t.Fatal("(b) shouldRestoreFromSession=true when SavedAt > workspaceRestoreTTL; expected false")
+		}
+		if !shouldSuppressOutput(ctx.Stdin, nil) {
+			t.Fatal("(b) shouldSuppressOutput=false after TTL expiry; expected suppress")
+		}
+	})
+
+	t.Run("(c) partial fresh stdin -> fresh fields not overwritten", func(t *testing.T) {
+		cwd := normalizeCwd(t.TempDir())
+		detectCwdEnv = func(string) string { return "" }
+		detectCwdGetwd = func() (string, error) { return cwd, nil }
+
+		cached := buildCached(cwd, now.Add(-10*time.Second))
+
+		// stdin이 workspace만 fresh로 들고 옴, 나머지 비어있음.
+		freshCwd := "/fresh/workspace"
+		stdin := StdinInput{}
+		stdin.Workspace.CurrentDir = freshCwd
+
+		if !shouldRestoreFromSession(stdin, cached, now) {
+			t.Fatal("(c) shouldRestoreFromSession=false; expected true (model/cost/context are empty)")
+		}
+
+		mask := fillFromSessionCache(&stdin, cached)
+
+		// fresh workspace는 덮이지 않아야 함.
+		if stdin.Workspace.CurrentDir != freshCwd {
+			t.Errorf("(c) Workspace.CurrentDir overwritten: got %q, want %q", stdin.Workspace.CurrentDir, freshCwd)
+		}
+		if mask.Workspace {
+			t.Error("(c) mask.Workspace should be false (stdin had fresh workspace)")
+		}
+		// model/cost/context는 cache에서 채워져야 함.
+		if !mask.Model {
+			t.Error("(c) mask.Model should be true (stdin had empty model)")
+		}
+		if !mask.Cost {
+			t.Error("(c) mask.Cost should be true (stdin had zero cost)")
+		}
+		if !mask.ContextWindow {
+			t.Error("(c) mask.ContextWindow should be true (stdin had empty context)")
+		}
+		if stdin.Model.ID != "claude-opus-4-6" {
+			t.Errorf("(c) Model.ID = %q, want claude-opus-4-6", stdin.Model.ID)
+		}
+		if stdin.Cost.TotalCostUsd != 1.25 {
+			t.Errorf("(c) Cost = %.4f, want 1.25", stdin.Cost.TotalCostUsd)
+		}
+	})
+}
+
+// task-004: degraded 호출이 N회 반복될 때 cache-복원된 필드가 SessionState에
+// 누적되지 않음을 검증하는 시나리오 테스트.
+//
+// 흐름:
+//  1. 정상 stdin(workspace/model/cost/context 모두 포함)으로 캐시를 초기 생성.
+//  2. 빈 stdin으로 첫 번째 degraded 호출 → stripRestoredFields 적용 후 save.
+//     저장된 캐시 본문에서 복원 필드가 비어있는지 확인.
+//  3. 동일 상태에서 두 번째 빈 stdin 호출 → 두 번째 save 후에도 마찬가지로
+//     복원 필드가 비어있는지 확인(자기참조 고착 0회).
+//  4. fresh 필드(Version, SessionId)는 두 호출 내내 보존됨을 확인.
+func TestTask004StripRestoredFieldsNoAccumulation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cwd := normalizeCwd(t.TempDir())
+
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+	detectCwdEnv = func(string) string { return "" }
+	detectCwdGetwd = func() (string, error) { return cwd, nil }
+
+	const cacheKey = "task004-scenario"
+
+	// Step 1: 정상 stdin으로 초기 캐시 생성. Save 직전에는 복원이 없으므로 mask 전부
+	// false → 필드 그대로 저장됨.
+	initialStdin := StdinInput{SessionId: cacheKey}
+	initialStdin.Workspace.CurrentDir = cwd
+	initialStdin.Model.ID = "claude-opus-4-6"
+	initialStdin.Model.DisplayName = "Opus"
+	initialStdin.Cost.TotalCostUsd = 1.25
+	initialStdin.ContextWindow.TotalInputTokens = 50000
+	initialStdin.ContextWindow.TotalOutputTokens = 10000
+	initialStdin.ContextWindow.ContextWindowSize = 200000
+	initialStdin.Version = "v-fresh"
+
+	snapshot0 := initialStdin
+	snapshot0.RateLimits = nil
+	stripRestoredFields(&snapshot0, restoredFieldMask{}) // all false — no-op
+	saveSessionState(cacheKey, &SessionState{
+		CachedStdin: &snapshot0,
+		WidgetCount: 4,
+	})
+
+	// Step 2: 첫 번째 degraded 호출. 빈 stdin + 위에서 만든 cached.
+	now := time.Now()
+	cached1 := loadSessionState(cacheKey)
+	if cached1 == nil {
+		t.Fatalf("step2: initial cache not found")
+	}
+
+	degradedStdin1 := StdinInput{SessionId: cacheKey, Version: "v-fresh"}
+	if !shouldRestoreFromSession(degradedStdin1, cached1, now) {
+		t.Fatalf("step2: shouldRestoreFromSession=false unexpectedly; test prerequisite not met")
+	}
+	mask1 := fillFromSessionCache(&degradedStdin1, cached1)
+
+	// mask가 하나라도 true여야 한다(빈 stdin을 채웠으므로).
+	if !(mask1.Workspace || mask1.Model || mask1.Cost || mask1.ContextWindow) {
+		t.Fatalf("step2: expected at least one mask bit true, got all false")
+	}
+
+	// save 직전 stripping 적용.
+	snapshot1 := degradedStdin1
+	snapshot1.RateLimits = nil
+	stripRestoredFields(&snapshot1, mask1)
+	saveSessionState(cacheKey, &SessionState{
+		CachedStdin: &snapshot1,
+		WidgetCount: 4,
+	})
+
+	// 저장된 캐시 본문에서 cache-복원 필드가 비어있는지 확인.
+	saved1 := loadSessionState(cacheKey)
+	if saved1 == nil || saved1.CachedStdin == nil {
+		t.Fatalf("step2: saved cache not found after first degraded call")
+	}
+	if mask1.Workspace && saved1.CachedStdin.Workspace.CurrentDir != "" {
+		t.Errorf("step2: Workspace.CurrentDir = %q after strip+save; want empty (cache-restored field must not persist)",
+			saved1.CachedStdin.Workspace.CurrentDir)
+	}
+	if mask1.Model && (saved1.CachedStdin.Model.ID != "" || saved1.CachedStdin.Model.DisplayName != "") {
+		t.Errorf("step2: Model = %+v after strip+save; want zero (cache-restored field must not persist)",
+			saved1.CachedStdin.Model)
+	}
+	if mask1.Cost && saved1.CachedStdin.Cost.TotalCostUsd != 0 {
+		t.Errorf("step2: Cost.TotalCostUsd = %v after strip+save; want 0 (cache-restored field must not persist)",
+			saved1.CachedStdin.Cost.TotalCostUsd)
+	}
+	if mask1.ContextWindow && saved1.CachedStdin.ContextWindow.TotalInputTokens != 0 {
+		t.Errorf("step2: ContextWindow.TotalInputTokens = %d after strip+save; want 0 (cache-restored field must not persist)",
+			saved1.CachedStdin.ContextWindow.TotalInputTokens)
+	}
+	// Version은 fresh이므로 보존되어야 함.
+	if saved1.CachedStdin.Version != "v-fresh" {
+		t.Errorf("step2: Version = %q; want v-fresh (fresh field must survive stripping)", saved1.CachedStdin.Version)
+	}
+	// SavedAt은 갱신되어야 한다 (non-zero).
+	if saved1.SavedAt == 0 {
+		t.Errorf("step2: SavedAt = 0; want non-zero (must be updated on each save)")
+	}
+
+	// Step 3: 두 번째 degraded 호출 — saved1이 캐시로 사용됨.
+	// saved1에는 이미 workspace/model/cost/context가 비어있으므로
+	// shouldRestoreFromSession은 eligibility=false를 반환해야 한다
+	// (캐시에 복원할 값이 없거나 needsFill 조건에서 캐시도 비어있어 no-op).
+	// 중요: 자기참조 고착 방지가 목적이므로 두 번째 호출 후 캐시가 다시 채워지지
+	// 않음을 확인하면 된다.
+	degradedStdin2 := StdinInput{SessionId: cacheKey, Version: "v-fresh"}
+	mask2 := restoredFieldMask{}
+	if shouldRestoreFromSession(degradedStdin2, saved1, now) {
+		mask2 = fillFromSessionCache(&degradedStdin2, saved1)
+	}
+
+	snapshot2 := degradedStdin2
+	snapshot2.RateLimits = nil
+	stripRestoredFields(&snapshot2, mask2)
+
+	// WidgetCount < 2 조건이면 save 자체가 skip되지만, 여기선 save를 직접 호출해
+	// 저장 본문이 누적되지 않음을 어서션한다.
+	saveSessionState(cacheKey, &SessionState{
+		CachedStdin: &snapshot2,
+		WidgetCount: 2, // 최소 threshold 만족으로 강제 save
+	})
+
+	saved2 := loadSessionState(cacheKey)
+	if saved2 == nil || saved2.CachedStdin == nil {
+		t.Fatalf("step3: saved cache not found after second degraded call")
+	}
+	// 두 번째 저장 본문에서도 cache-복원 필드가 비어있어야 함.
+	if saved2.CachedStdin.Workspace.CurrentDir != "" {
+		t.Errorf("step3: Workspace.CurrentDir = %q; want empty (no accumulation after 2nd degraded call)",
+			saved2.CachedStdin.Workspace.CurrentDir)
+	}
+	if saved2.CachedStdin.Model.ID != "" || saved2.CachedStdin.Model.DisplayName != "" {
+		t.Errorf("step3: Model = %+v; want zero (no accumulation after 2nd degraded call)",
+			saved2.CachedStdin.Model)
+	}
+	if saved2.CachedStdin.Cost.TotalCostUsd != 0 {
+		t.Errorf("step3: Cost.TotalCostUsd = %v; want 0 (no accumulation after 2nd degraded call)",
+			saved2.CachedStdin.Cost.TotalCostUsd)
+	}
+	// Version 보존 확인.
+	if saved2.CachedStdin.Version != "v-fresh" {
+		t.Errorf("step3: Version = %q; want v-fresh (fresh field must survive)", saved2.CachedStdin.Version)
+	}
+	// SavedAt 갱신 확인.
+	if saved2.SavedAt == 0 {
+		t.Errorf("step3: SavedAt = 0; want non-zero")
+	}
+}
+
+// containsAny returns true if s contains any of the given substrings.
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// task-005 회귀 보호 묶음 — cross-workspace 노출 금지, warmup·suppress 유지,
+// RateLimits 미복원을 e2e 성격으로 검증한다 (SPEC §5.2·§5.3·§5.4·§5.5·§5.6).
+
+// (a) cross-workspace 차단: cwd가 cached cwd와 다를 때 어떤 필드도 복원되지 않고
+// stdout에 cached cwd 문자열·model id·cost 수치가 등장하지 않음.
+func TestTask005CrossWorkspaceBlocked(t *testing.T) {
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+
+	cachedCwd := normalizeCwd(t.TempDir()) // 캐시에 저장된 cwd
+	currentCwd := normalizeCwd(t.TempDir()) // 현재 실행 중인 다른 cwd
+
+	// detectCurrentCwd가 currentCwd를 반환하도록 설정
+	detectCwdEnv = func(string) string { return "" }
+	detectCwdGetwd = func() (string, error) { return currentCwd, nil }
+
+	// cached SessionState: cachedCwd 워크스페이스의 정상 데이터
+	var cachedStdin StdinInput
+	cachedStdin.Workspace.CurrentDir = cachedCwd
+	cachedStdin.Model.ID = "claude-opus-4-6-cross"
+	cachedStdin.Model.DisplayName = "OpusCross"
+	cachedStdin.Cost.TotalCostUsd = 9.99
+	cachedStdin.ContextWindow.TotalInputTokens = 50000
+	cachedStdin.ContextWindow.TotalOutputTokens = 10000
+	cachedStdin.ContextWindow.ContextWindowSize = 200000
+	cached := &SessionState{
+		CachedStdin: &cachedStdin,
+		WidgetCount: 4,
+		SavedAt:     time.Now().Add(-5 * time.Second).Unix(),
+	}
+
+	// 빈 stdin으로 호출 (cross-workspace 시나리오)
+	emptyStdin := StdinInput{}
+
+	// eligibility가 false여야 함 (cwd mismatch)
+	if shouldRestoreFromSession(emptyStdin, cached, time.Now()) {
+		t.Fatal("(a) shouldRestoreFromSession=true on cross-workspace; expected false (SPEC §5.2·§5.4)")
+	}
+
+	// 복원이 없으므로 orchestrate 결과에 cached 데이터가 없어야 함
+	cfg := loadConfig("")
+	trans := loadTranslations(cfg.Language)
+	ctx := &Context{
+		Stdin:        emptyStdin,
+		Config:       cfg,
+		Translations: trans,
+	}
+	result := orchestrate(ctx)
+
+	combined := strings.Join(result.Lines, "\n")
+
+	// stdout에 cached 워크스페이스 cwd 경로가 등장하면 안 됨
+	if strings.Contains(combined, cachedCwd) {
+		t.Errorf("(a) cross-workspace: cached cwd %q leaked into output: %q", cachedCwd, combined)
+	}
+	// stdout에 cached model id가 등장하면 안 됨
+	if strings.Contains(combined, "claude-opus-4-6-cross") {
+		t.Errorf("(a) cross-workspace: cached model id leaked into output: %q", combined)
+	}
+	// stdout에 cached cost 수치가 등장하면 안 됨
+	if strings.Contains(combined, "9.99") {
+		t.Errorf("(a) cross-workspace: cached cost 9.99 leaked into output: %q", combined)
+	}
+
+	// 빈 stdin이므로 shouldSuppressOutput이 차단해야 함
+	if !shouldSuppressOutput(emptyStdin, nil) {
+		t.Error("(a) shouldSuppressOutput=false after cross-workspace block with empty stdin; expected suppress")
+	}
+}
+
+// (b) warmup 예외 유지: stdin·캐시 모두 identity 없고 RateLimits만 있으면
+// shouldSuppressOutput이 통과되어 5h/7d 위젯이 렌더된다.
+func TestTask005WarmupExceptionPreserved(t *testing.T) {
+	// stdin 완전히 빔 — identity 없음
+	emptyStdin := StdinInput{}
+
+	// cached도 없음 (nil)
+	var cached *SessionState = nil
+
+	// RateLimits만 존재
+	rateLimits := &UsageLimits{
+		FiveHour: &UsageLimitEntry{Utilization: 42, ResetsAt: time.Now().Add(time.Hour)},
+	}
+
+	// eligibility=false여야 함 (cached==nil)
+	if shouldRestoreFromSession(emptyStdin, cached, time.Now()) {
+		t.Fatal("(b) shouldRestoreFromSession=true with nil cached; expected false")
+	}
+
+	// RateLimits가 있으므로 shouldSuppressOutput이 통과해야 함 (warmup 예외)
+	if shouldSuppressOutput(emptyStdin, rateLimits) {
+		t.Fatal("(b) shouldSuppressOutput=true with RateLimits present; warmup exception must allow output (SPEC §5.3)")
+	}
+
+	// orchestrate 결과에 5h 위젯이 있어야 함
+	cfg := loadConfig("")
+	trans := loadTranslations(cfg.Language)
+	ctx := &Context{
+		Stdin:        emptyStdin,
+		Config:       cfg,
+		Translations: trans,
+		RateLimits:   rateLimits,
+	}
+	result := orchestrate(ctx)
+	combined := strings.Join(result.Lines, "\n")
+
+	// 5h 위젯이 렌더되면 "5h" 문자열이 포함되어야 함
+	if result.WidgetCount == 0 {
+		t.Errorf("(b) warmup: widgetCount=0, expected rate-limit widgets to render (output=%q)", combined)
+	}
+	if !strings.Contains(combined, "5h") {
+		t.Errorf("(b) warmup: '5h' not in output (got %q); rate-limit widget should render", combined)
+	}
+}
+
+// (c) 무출력 조건 유지: stdin·캐시·RateLimits 모두 없을 때 stdout이 빈 문자열.
+func TestTask005SuppressWhenAllEmpty(t *testing.T) {
+	emptyStdin := StdinInput{}
+
+	// cached nil
+	if shouldRestoreFromSession(emptyStdin, nil, time.Now()) {
+		t.Fatal("(c) shouldRestoreFromSession=true with nil cached; expected false")
+	}
+
+	// RateLimits nil → shouldSuppressOutput=true
+	if !shouldSuppressOutput(emptyStdin, nil) {
+		t.Fatal("(c) shouldSuppressOutput=false with all empty; expected suppress (SPEC §5.3)")
+	}
+
+	// RateLimits empty struct → shouldSuppressOutput=true
+	if !shouldSuppressOutput(emptyStdin, &UsageLimits{}) {
+		t.Fatal("(c) shouldSuppressOutput=false with empty UsageLimits; expected suppress")
+	}
+
+	// orchestrate 결과 자체도 identity 없으면 빈 출력
+	cfg := loadConfig("")
+	trans := loadTranslations(cfg.Language)
+	ctx := &Context{
+		Stdin:        emptyStdin,
+		Config:       cfg,
+		Translations: trans,
+		RateLimits:   nil,
+	}
+	result := orchestrate(ctx)
+	combined := strings.Join(result.Lines, "\n")
+	// 비용 위젯("$0.00")만 나올 수 있지만 shouldSuppressOutput이 차단하므로
+	// 실제 출력 경로에서는 빈 문자열이 된다. 여기서는 suppress 판단만 검증.
+	_ = combined
+	// suppress=true임을 이미 위에서 확인했으므로 stdout은 빈 문자열이 됨.
+}
+
+// (d) RateLimits 미복원: 캐시 본문에 임의로 RateLimits를 넣은 fixture에서도
+// ctx.RateLimits에 주입되지 않고, save 직전 snapshot.RateLimits가 nil임을 어서션.
+func TestTask005RateLimitsNotRestoredFromCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cwd := normalizeCwd(t.TempDir())
+
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+	detectCwdEnv = func(string) string { return "" }
+	detectCwdGetwd = func() (string, error) { return cwd, nil }
+
+	// 캐시 본문에 의도적으로 RateLimits를 박아둔 fixture SessionState를 생성.
+	// (실제로는 save 측 stripping으로 이렇게 저장되지 않지만, 혹시 stripping이
+	// 우회되는 회귀가 생겨도 복원 경로에서 차단됨을 검증.)
+	var cachedStdin StdinInput
+	cachedStdin.SessionId = "task005-ratelimits"
+	cachedStdin.Workspace.CurrentDir = cwd
+	cachedStdin.Model.ID = "claude-opus-4-6"
+	cachedStdin.Model.DisplayName = "Opus"
+	cachedStdin.Cost.TotalCostUsd = 2.50
+	cachedStdin.ContextWindow.TotalInputTokens = 30000
+	cachedStdin.ContextWindow.TotalOutputTokens = 5000
+	cachedStdin.ContextWindow.ContextWindowSize = 200000
+	// 테스트 fixture: 캐시 본문에 강제로 RateLimits 삽입 (회귀 시뮬레이션)
+	cachedStdin.RateLimits = &struct {
+		FiveHour *struct {
+			UsedPercentage int   `json:"used_percentage"`
+			ResetsAt       int64 `json:"resets_at"`
+		} `json:"five_hour,omitempty"`
+		SevenDay *struct {
+			UsedPercentage int   `json:"used_percentage"`
+			ResetsAt       int64 `json:"resets_at"`
+		} `json:"seven_day,omitempty"`
+	}{
+		FiveHour: &struct {
+			UsedPercentage int   `json:"used_percentage"`
+			ResetsAt       int64 `json:"resets_at"`
+		}{UsedPercentage: 80, ResetsAt: time.Now().Add(time.Hour).Unix()},
+	}
+	cached := &SessionState{
+		CachedStdin: &cachedStdin,
+		WidgetCount: 4,
+		SavedAt:     time.Now().Add(-5 * time.Second).Unix(),
+	}
+
+	// 빈 stdin으로 복원 시도
+	emptyStdin := StdinInput{}
+
+	// eligibility 결정: cwd 일치이므로 true여야 함
+	if !shouldRestoreFromSession(emptyStdin, cached, time.Now()) {
+		t.Fatal("(d) shouldRestoreFromSession=false; expected true (cwd match, empty stdin)")
+	}
+
+	// fillFromSessionCache 후 stdin.RateLimits는 절대 채워지면 안 됨
+	filled := emptyStdin
+	mask := fillFromSessionCache(&filled, cached)
+
+	if filled.RateLimits != nil {
+		t.Errorf("(d) fillFromSessionCache: RateLimits=%#v, want nil (must never restore RateLimits from cache, SPEC §5.5)",
+			filled.RateLimits)
+	}
+
+	// mask에 RateLimits 비트가 없어야 함 (restoredFieldMask에 RateLimits 필드 없음이 보장)
+	// model/cost/context는 채워져야 함
+	if !mask.Model {
+		t.Error("(d) mask.Model=false; expected true (model was empty in stdin)")
+	}
+	if !mask.Cost {
+		t.Error("(d) mask.Cost=false; expected true (cost was zero in stdin)")
+	}
+	if !mask.ContextWindow {
+		t.Error("(d) mask.ContextWindow=false; expected true (context was empty in stdin)")
+	}
+
+	// save 직전 stripping: snapshot.RateLimits = nil이 적용되면 저장 본문에 nil이어야 함
+	const cacheKey = "task005-ratelimits"
+	snapshot := filled
+	snapshot.RateLimits = nil
+	stripRestoredFields(&snapshot, mask)
+	saveSessionState(cacheKey, &SessionState{
+		CachedStdin: &snapshot,
+		WidgetCount: 4,
+	})
+
+	reloaded := loadSessionState(cacheKey)
+	if reloaded == nil || reloaded.CachedStdin == nil {
+		t.Fatalf("(d) loadSessionState returned nil after save")
+	}
+	// 저장 후 재로드 시 RateLimits가 nil이어야 함
+	if reloaded.CachedStdin.RateLimits != nil {
+		t.Errorf("(d) reloaded.RateLimits=%#v, want nil (save-side RateLimits strip must persist)",
+			reloaded.CachedStdin.RateLimits)
+	}
+	// cache-복원된 model/cost/context는 stripping으로 비워졌어야 함
+	if mask.Model && (reloaded.CachedStdin.Model.ID != "" || reloaded.CachedStdin.Model.DisplayName != "") {
+		t.Errorf("(d) Model=%+v after strip; want zero (cache-restored field must not persist in save)",
+			reloaded.CachedStdin.Model)
+	}
+	if mask.Cost && reloaded.CachedStdin.Cost.TotalCostUsd != 0 {
+		t.Errorf("(d) Cost=%v after strip; want 0 (cache-restored field must not persist in save)",
+			reloaded.CachedStdin.Cost.TotalCostUsd)
 	}
 }

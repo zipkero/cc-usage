@@ -168,70 +168,6 @@ func TestAtomicWriteFileReplacesValidJSON(t *testing.T) {
 	}
 }
 
-func TestShouldRestoreCost(t *testing.T) {
-	now := time.Unix(1_700_000_000, 0)
-	freshSavedAt := now.Add(-30 * time.Second).Unix()
-	staleSavedAt := now.Add(-(sessionStateTTL + time.Second)).Unix()
-
-	makeStdin := func(cost float64) StdinInput {
-		var s StdinInput
-		s.Cost.TotalCostUsd = cost
-		return s
-	}
-	makeCached := func(cost float64, savedAt int64) *SessionState {
-		cs := makeStdin(cost)
-		return &SessionState{
-			CachedStdin: &cs,
-			WidgetCount: 2,
-			SavedAt:     savedAt,
-		}
-	}
-
-	t.Run("restores when stdin cost=0 and cache cost>0 fresh", func(t *testing.T) {
-		got := shouldRestoreCost(makeStdin(0), makeCached(1.25, freshSavedAt), now)
-		if !got {
-			t.Fatalf("shouldRestoreCost = false, want true")
-		}
-	})
-
-	t.Run("no restore when cached is nil", func(t *testing.T) {
-		if shouldRestoreCost(makeStdin(0), nil, now) {
-			t.Fatalf("shouldRestoreCost = true with nil cache, want false")
-		}
-	})
-
-	t.Run("no restore when cached.CachedStdin is nil", func(t *testing.T) {
-		state := &SessionState{CachedStdin: nil, WidgetCount: 2, SavedAt: freshSavedAt}
-		if shouldRestoreCost(makeStdin(0), state, now) {
-			t.Fatalf("shouldRestoreCost = true with nil CachedStdin, want false")
-		}
-	})
-
-	t.Run("no restore when cache cost=0", func(t *testing.T) {
-		if shouldRestoreCost(makeStdin(0), makeCached(0, freshSavedAt), now) {
-			t.Fatalf("shouldRestoreCost = true with cache cost=0, want false")
-		}
-	})
-
-	t.Run("no restore when SavedAt=0", func(t *testing.T) {
-		if shouldRestoreCost(makeStdin(0), makeCached(1.25, 0), now) {
-			t.Fatalf("shouldRestoreCost = true with SavedAt=0, want false")
-		}
-	})
-
-	t.Run("no restore when SavedAt older than sessionStateTTL", func(t *testing.T) {
-		if shouldRestoreCost(makeStdin(0), makeCached(1.25, staleSavedAt), now) {
-			t.Fatalf("shouldRestoreCost = true with stale SavedAt, want false")
-		}
-	})
-
-	t.Run("no restore when stdin cost>0", func(t *testing.T) {
-		if shouldRestoreCost(makeStdin(0.5), makeCached(1.25, freshSavedAt), now) {
-			t.Fatalf("shouldRestoreCost = true with stdin cost>0, want false")
-		}
-	})
-}
-
 func TestCleanOldSessionStates(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -758,5 +694,384 @@ func TestCacheFileLockSerializesAccess(t *testing.T) {
 	}
 	if err := <-secondAcquired; err != nil {
 		t.Fatalf("second lock failed: %v", err)
+	}
+}
+
+// ── task-002: shouldRestoreFromSession + fillFromSessionCache ──────────────
+
+// makeCachedForRestore builds a valid SessionState with the given cwd and
+// SavedAt for use in shouldRestoreFromSession / fillFromSessionCache tests.
+// detectCwdEnv / detectCwdGetwd must be patched by the caller so that
+// shouldRestoreWorkspace returns true for cwd.
+func makeCachedForRestore(cwd string, savedAt time.Time) *SessionState {
+	var cs StdinInput
+	cs.Workspace.CurrentDir = cwd
+	cs.Model.ID = "claude-opus-4-6"
+	cs.Model.DisplayName = "Opus"
+	cs.Cost.TotalCostUsd = 1.25
+	cs.ContextWindow.TotalInputTokens = 50000
+	cs.ContextWindow.TotalOutputTokens = 10000
+	return &SessionState{
+		CachedStdin: &cs,
+		WidgetCount: 4,
+		SavedAt:     savedAt.Unix(),
+	}
+}
+
+// patchCwdTo replaces detectCwdEnv/detectCwdGetwd so that detectCurrentCwd
+// returns cwd, and restores originals via t.Cleanup.
+func patchCwdTo(t *testing.T, cwd string) {
+	t.Helper()
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+	detectCwdEnv = func(string) string { return "" }
+	detectCwdGetwd = func() (string, error) { return cwd, nil }
+}
+
+// TestShouldRestoreFromSession tests all four eligibility=false branches and
+// the eligibility=true case.
+func TestShouldRestoreFromSession(t *testing.T) {
+	cwd := normalizeCwd(t.TempDir())
+	now := time.Unix(1_700_000_000, 0)
+	freshSavedAt := now.Add(-10 * time.Second)
+	staleSavedAt := now.Add(-(workspaceRestoreTTL + time.Second))
+
+	// Blank stdin that has all five backfill-eligible fields empty.
+	emptyStdin := StdinInput{}
+
+	t.Run("eligibility=false: cached==nil", func(t *testing.T) {
+		patchCwdTo(t, cwd)
+		if shouldRestoreFromSession(emptyStdin, nil, now) {
+			t.Fatal("expected false with nil cached, got true")
+		}
+	})
+
+	t.Run("eligibility=false: SavedAt==0", func(t *testing.T) {
+		patchCwdTo(t, cwd)
+		cached := makeCachedForRestore(cwd, freshSavedAt)
+		cached.SavedAt = 0
+		if shouldRestoreFromSession(emptyStdin, cached, now) {
+			t.Fatal("expected false with SavedAt==0, got true")
+		}
+	})
+
+	t.Run("eligibility=false: SavedAt expired", func(t *testing.T) {
+		patchCwdTo(t, cwd)
+		cached := makeCachedForRestore(cwd, staleSavedAt)
+		if shouldRestoreFromSession(emptyStdin, cached, now) {
+			t.Fatalf("expected false with stale SavedAt (%v >= workspaceRestoreTTL), got true",
+				now.Sub(time.Unix(cached.SavedAt, 0)))
+		}
+	})
+
+	t.Run("eligibility=false: cwd mismatch", func(t *testing.T) {
+		otherCwd := normalizeCwd(t.TempDir())
+		patchCwdTo(t, otherCwd) // current cwd != cached cwd
+		cached := makeCachedForRestore(cwd, freshSavedAt)
+		if shouldRestoreFromSession(emptyStdin, cached, now) {
+			t.Fatal("expected false with cwd mismatch, got true")
+		}
+	})
+
+	t.Run("eligibility=false: no empty fields", func(t *testing.T) {
+		patchCwdTo(t, cwd)
+		cached := makeCachedForRestore(cwd, freshSavedAt)
+		// Build a fully-populated stdin so no field is empty.
+		full := StdinInput{}
+		full.Workspace.CurrentDir = cwd
+		full.Model.ID = "claude-opus-4-6"
+		full.Model.DisplayName = "Opus"
+		full.Cost.TotalCostUsd = 2.00
+		full.ContextWindow.TotalInputTokens = 1000
+		// Worktree != nil
+		full.Worktree = &struct {
+			Name           string `json:"name"`
+			Path           string `json:"path"`
+			Branch         string `json:"branch"`
+			OriginalCwd    string `json:"original_cwd"`
+			OriginalBranch string `json:"original_branch"`
+		}{Name: "wt"}
+		if shouldRestoreFromSession(full, cached, now) {
+			t.Fatal("expected false when stdin has no empty fields, got true")
+		}
+	})
+
+	t.Run("eligibility=true: all empty fields and cwd match", func(t *testing.T) {
+		patchCwdTo(t, cwd)
+		cached := makeCachedForRestore(cwd, freshSavedAt)
+		if !shouldRestoreFromSession(emptyStdin, cached, now) {
+			t.Fatal("expected true with empty stdin and valid cache, got false")
+		}
+	})
+}
+
+// TestFillFromSessionCacheAllEmptyFields tests that when eligibility=true and
+// stdin is entirely empty, all five fields are filled from the cache and
+// RateLimits remains nil.
+func TestFillFromSessionCacheAllEmptyFields(t *testing.T) {
+	cwd := normalizeCwd(t.TempDir())
+	patchCwdTo(t, cwd)
+
+	now := time.Unix(1_700_000_000, 0)
+	cached := makeCachedForRestore(cwd, now.Add(-10*time.Second))
+	// Give cached a non-nil Worktree so the fill path exercises it.
+	wt := struct {
+		Name           string `json:"name"`
+		Path           string `json:"path"`
+		Branch         string `json:"branch"`
+		OriginalCwd    string `json:"original_cwd"`
+		OriginalBranch string `json:"original_branch"`
+	}{Name: "my-worktree"}
+	cached.CachedStdin.Worktree = &wt
+	// Add RateLimits to cached to verify they are never copied.
+	cached.CachedStdin.RateLimits = &struct {
+		FiveHour *struct {
+			UsedPercentage int   `json:"used_percentage"`
+			ResetsAt       int64 `json:"resets_at"`
+		} `json:"five_hour,omitempty"`
+		SevenDay *struct {
+			UsedPercentage int   `json:"used_percentage"`
+			ResetsAt       int64 `json:"resets_at"`
+		} `json:"seven_day,omitempty"`
+	}{}
+
+	stdin := StdinInput{} // all fields empty
+	mask := fillFromSessionCache(&stdin, cached)
+
+	if !mask.Workspace {
+		t.Error("mask.Workspace should be true")
+	}
+	if !mask.Worktree {
+		t.Error("mask.Worktree should be true")
+	}
+	if !mask.Model {
+		t.Error("mask.Model should be true")
+	}
+	if !mask.Cost {
+		t.Error("mask.Cost should be true")
+	}
+	if !mask.ContextWindow {
+		t.Error("mask.ContextWindow should be true")
+	}
+
+	if stdin.Workspace.CurrentDir != cached.CachedStdin.Workspace.CurrentDir {
+		t.Errorf("Workspace.CurrentDir = %q, want %q", stdin.Workspace.CurrentDir, cached.CachedStdin.Workspace.CurrentDir)
+	}
+	if stdin.Worktree == nil || stdin.Worktree.Name != "my-worktree" {
+		t.Errorf("Worktree = %v, want non-nil with Name=my-worktree", stdin.Worktree)
+	}
+	if stdin.Model.ID != cached.CachedStdin.Model.ID {
+		t.Errorf("Model.ID = %q, want %q", stdin.Model.ID, cached.CachedStdin.Model.ID)
+	}
+	if stdin.Cost.TotalCostUsd != cached.CachedStdin.Cost.TotalCostUsd {
+		t.Errorf("Cost.TotalCostUsd = %v, want %v", stdin.Cost.TotalCostUsd, cached.CachedStdin.Cost.TotalCostUsd)
+	}
+	if stdin.ContextWindow.TotalInputTokens != cached.CachedStdin.ContextWindow.TotalInputTokens {
+		t.Errorf("ContextWindow.TotalInputTokens = %d, want %d", stdin.ContextWindow.TotalInputTokens, cached.CachedStdin.ContextWindow.TotalInputTokens)
+	}
+	// RateLimits must remain nil regardless of what cached carries.
+	if stdin.RateLimits != nil {
+		t.Error("RateLimits must remain nil after fillFromSessionCache")
+	}
+}
+
+// TestFillFromSessionCacheFreshFieldsNotOverwritten verifies that fields
+// already carrying fresh values in stdin are not clobbered by cached values.
+func TestFillFromSessionCacheFreshFieldsNotOverwritten(t *testing.T) {
+	cwd := normalizeCwd(t.TempDir())
+	patchCwdTo(t, cwd)
+
+	now := time.Unix(1_700_000_000, 0)
+	cached := makeCachedForRestore(cwd, now.Add(-10*time.Second))
+
+	// stdin arrives with fresh model, workspace, and cost — only context is empty.
+	stdin := StdinInput{}
+	stdin.Workspace.CurrentDir = "/fresh/dir"
+	stdin.Model.ID = "claude-fresh-model"
+	stdin.Model.DisplayName = "Fresh"
+	stdin.Cost.TotalCostUsd = 9.99
+	stdin.ContextWindow.TotalInputTokens = 0
+	stdin.ContextWindow.TotalOutputTokens = 0
+
+	mask := fillFromSessionCache(&stdin, cached)
+
+	// Fresh fields must be untouched.
+	if stdin.Workspace.CurrentDir != "/fresh/dir" {
+		t.Errorf("Workspace.CurrentDir overwritten: got %q, want /fresh/dir", stdin.Workspace.CurrentDir)
+	}
+	if stdin.Model.ID != "claude-fresh-model" {
+		t.Errorf("Model.ID overwritten: got %q, want claude-fresh-model", stdin.Model.ID)
+	}
+	if stdin.Cost.TotalCostUsd != 9.99 {
+		t.Errorf("Cost.TotalCostUsd overwritten: got %v, want 9.99", stdin.Cost.TotalCostUsd)
+	}
+	// Only ContextWindow (empty) should have been filled.
+	if !mask.ContextWindow {
+		t.Error("mask.ContextWindow should be true (was empty)")
+	}
+	if mask.Workspace || mask.Model || mask.Cost {
+		t.Errorf("mask should only have ContextWindow set; got mask=%+v", mask)
+	}
+	if stdin.ContextWindow.TotalInputTokens != cached.CachedStdin.ContextWindow.TotalInputTokens {
+		t.Errorf("ContextWindow not filled: got %d, want %d",
+			stdin.ContextWindow.TotalInputTokens, cached.CachedStdin.ContextWindow.TotalInputTokens)
+	}
+}
+
+// TestFillFromSessionCacheEligibilityFalseNoChange verifies that when
+// eligibility is false (cached==nil), fillFromSessionCache leaves stdin
+// unchanged and returns an all-false mask.
+func TestFillFromSessionCacheEligibilityFalseNoChange(t *testing.T) {
+	stdin := StdinInput{}
+	mask := fillFromSessionCache(&stdin, nil)
+
+	if mask.Workspace || mask.Worktree || mask.Model || mask.Cost || mask.ContextWindow {
+		t.Errorf("expected all-false mask with nil cached, got %+v", mask)
+	}
+	if stdin.Workspace.CurrentDir != "" || stdin.Model.ID != "" || stdin.Cost.TotalCostUsd != 0 {
+		t.Error("stdin was mutated despite nil cached")
+	}
+}
+
+// ── task-004: stripRestoredFields ────────────────────────────────────────────
+
+// TestStripRestoredFieldsAllTrue verifies that when every mask bit is true,
+// all five fields are zeroed and unrelated fields (Version, SessionId, etc.)
+// are left unchanged.
+func TestStripRestoredFieldsAllTrue(t *testing.T) {
+	snapshot := StdinInput{}
+	snapshot.Workspace.CurrentDir = "/some/cwd"
+	snapshot.Model.ID = "claude-opus-4-6"
+	snapshot.Model.DisplayName = "Opus"
+	snapshot.Cost.TotalCostUsd = 1.25
+	snapshot.ContextWindow.TotalInputTokens = 50000
+	snapshot.ContextWindow.TotalOutputTokens = 10000
+	snapshot.ContextWindow.ContextWindowSize = 200000
+	wt := &struct {
+		Name           string `json:"name"`
+		Path           string `json:"path"`
+		Branch         string `json:"branch"`
+		OriginalCwd    string `json:"original_cwd"`
+		OriginalBranch string `json:"original_branch"`
+	}{Name: "my-wt"}
+	snapshot.Worktree = wt
+	snapshot.Version = "1.2.3"   // unrelated — must survive
+	snapshot.SessionId = "sid-1" // unrelated — must survive
+
+	mask := restoredFieldMask{
+		Workspace: true, Worktree: true, Model: true,
+		Cost: true, ContextWindow: true,
+	}
+	stripRestoredFields(&snapshot, mask)
+
+	if snapshot.Workspace.CurrentDir != "" {
+		t.Errorf("Workspace.CurrentDir = %q, want empty after strip", snapshot.Workspace.CurrentDir)
+	}
+	if snapshot.Worktree != nil {
+		t.Errorf("Worktree = %v, want nil after strip", snapshot.Worktree)
+	}
+	if snapshot.Model.ID != "" || snapshot.Model.DisplayName != "" {
+		t.Errorf("Model = %+v, want zero after strip", snapshot.Model)
+	}
+	if snapshot.Cost.TotalCostUsd != 0 {
+		t.Errorf("Cost.TotalCostUsd = %v, want 0 after strip", snapshot.Cost.TotalCostUsd)
+	}
+	if snapshot.ContextWindow.TotalInputTokens != 0 || snapshot.ContextWindow.ContextWindowSize != 0 {
+		t.Errorf("ContextWindow = %+v, want zero after strip", snapshot.ContextWindow)
+	}
+	// Unrelated fields must be preserved.
+	if snapshot.Version != "1.2.3" {
+		t.Errorf("Version = %q, want 1.2.3 (must not be stripped)", snapshot.Version)
+	}
+	if snapshot.SessionId != "sid-1" {
+		t.Errorf("SessionId = %q, want sid-1 (must not be stripped)", snapshot.SessionId)
+	}
+}
+
+// TestStripRestoredFieldsPartialMask verifies that only the fields whose mask
+// bits are true are zeroed; fields with mask=false keep their values.
+func TestStripRestoredFieldsPartialMask(t *testing.T) {
+	snapshot := StdinInput{}
+	snapshot.Workspace.CurrentDir = "/keep/me"
+	snapshot.Model.ID = "keep-model"
+	snapshot.Cost.TotalCostUsd = 9.99
+
+	// Only Model is marked as cache-restored.
+	mask := restoredFieldMask{Model: true}
+	stripRestoredFields(&snapshot, mask)
+
+	if snapshot.Workspace.CurrentDir != "/keep/me" {
+		t.Errorf("Workspace.CurrentDir = %q, want /keep/me (fresh field must survive)", snapshot.Workspace.CurrentDir)
+	}
+	if snapshot.Cost.TotalCostUsd != 9.99 {
+		t.Errorf("Cost.TotalCostUsd = %v, want 9.99 (fresh field must survive)", snapshot.Cost.TotalCostUsd)
+	}
+	if snapshot.Model.ID != "" || snapshot.Model.DisplayName != "" {
+		t.Errorf("Model = %+v, want zero (cache-restored field must be stripped)", snapshot.Model)
+	}
+}
+
+// TestStripRestoredFieldsAllFalse verifies that an all-false mask leaves the
+// snapshot entirely unchanged (eligibility=false path).
+func TestStripRestoredFieldsAllFalse(t *testing.T) {
+	snapshot := StdinInput{}
+	snapshot.Workspace.CurrentDir = "/unchanged"
+	snapshot.Model.ID = "unchanged-model"
+	snapshot.Cost.TotalCostUsd = 3.14
+
+	mask := restoredFieldMask{} // all false
+	stripRestoredFields(&snapshot, mask)
+
+	if snapshot.Workspace.CurrentDir != "/unchanged" {
+		t.Errorf("Workspace.CurrentDir changed: %q", snapshot.Workspace.CurrentDir)
+	}
+	if snapshot.Model.ID != "unchanged-model" {
+		t.Errorf("Model.ID changed: %q", snapshot.Model.ID)
+	}
+	if snapshot.Cost.TotalCostUsd != 3.14 {
+		t.Errorf("Cost.TotalCostUsd changed: %v", snapshot.Cost.TotalCostUsd)
+	}
+}
+
+// TestFillFromSessionCacheMaskAccuracy verifies that the returned mask
+// exactly reflects which fields were written — no more, no less.
+func TestFillFromSessionCacheMaskAccuracy(t *testing.T) {
+	cwd := normalizeCwd(t.TempDir())
+	patchCwdTo(t, cwd)
+
+	now := time.Unix(1_700_000_000, 0)
+	cached := makeCachedForRestore(cwd, now.Add(-10*time.Second))
+
+	// stdin is missing only Model and Cost; everything else is fresh.
+	stdin := StdinInput{}
+	stdin.Workspace.CurrentDir = cwd
+	stdin.ContextWindow.TotalInputTokens = 1000
+	// Worktree stays nil — but also cached has no Worktree set.
+	// (cached.CachedStdin.Worktree is nil, so fill is a no-op.)
+
+	mask := fillFromSessionCache(&stdin, cached)
+
+	// Model and Cost were empty in stdin; cached has them → should be filled.
+	if !mask.Model {
+		t.Error("mask.Model should be true (stdin had empty model)")
+	}
+	if !mask.Cost {
+		t.Error("mask.Cost should be true (stdin had zero cost)")
+	}
+	// Workspace was fresh → must not be filled.
+	if mask.Workspace {
+		t.Error("mask.Workspace should be false (stdin had fresh workspace)")
+	}
+	// ContextWindow was non-zero → must not be filled.
+	if mask.ContextWindow {
+		t.Error("mask.ContextWindow should be false (stdin had fresh context)")
+	}
+	// Worktree: stdin nil, cached nil → no fill.
+	if mask.Worktree {
+		t.Error("mask.Worktree should be false (both nil)")
 	}
 }

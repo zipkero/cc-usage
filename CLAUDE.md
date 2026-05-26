@@ -39,8 +39,8 @@ Claude Code는 idle/reload 직후 종종 workspace나 사용량이 비어있는 
 직전 정상 실행을 `~/.cache/cc-usage/session-state-<key>.json`에 저장해두고, 현재 실행의
 위젯 수가 더 적거나 workspace가 비어있으면 그 캐시로 fields를 복원한 뒤 **다시 orchestrate**한다.
 
-- `workspaceRestoreTTL = 30s` — cwd 복원은 30초 이내만 (사용자 `cd` 후 stale 경로 고착 방지)
-- `sessionStateTTL = 300s` — cost/context 복원은 5분 이내까지
+- `workspaceRestoreTTL = 60s` — 캐시 보강 eligibility 전체를 지배하는 단일 TTL. 이 기간을 초과한 캐시는 어떤 필드(workspace·model·cost·context)도 복원하지 않음. cwd-exact-match 가드가 cross-workspace 정확성을 담당하고, 이 TTL은 동일 workspace 내 stale 노출 창을 좁히는 역할.
+- `sessionStateTTL = 300s` — 세션 캐시 파일 유효 기간 (만료 파일은 load 즉시 무시·삭제)
 - `RateLimits`는 절대 캐시에서 복원하지 않음. 항상 API 캐시(`cache-<tokenHash>.json`)에서 fresh하게 가져옴.
 - 캐시 키는 `session_id > remote.session_id > agent_id > transcript_path > cwd` 우선순위 (cache.go:38).
 

@@ -88,41 +88,15 @@ func main() {
 
 	result := orchestrate(ctx)
 
-	// Degraded input: current stdin rendered fewer widgets than the last good
-	// render, or workspace.current_dir arrived empty while a recent cache still
-	// has it. Restore the minimum needed so widgets don't flicker away.
-	if cached != nil && cached.CachedStdin != nil {
-		workspaceStale := ctx.Stdin.Workspace.CurrentDir == "" && cached.CachedStdin.Workspace.CurrentDir != ""
-		usageDegraded := result.WidgetCount < cached.WidgetCount
-		// cost widget always renders, so widget count alone cannot detect a
-		// cost-only regression — track it as an independent signal.
-		costRegressed := shouldRestoreCost(ctx.Stdin, cached, time.Now())
-
-		restoreWorkspace := workspaceStale && cached.SavedAt > 0 &&
-			time.Since(time.Unix(cached.SavedAt, 0)) < workspaceRestoreTTL &&
-			shouldRestoreWorkspace(cached.CachedStdin.Workspace.CurrentDir)
-
-		if restoreWorkspace {
-			debugLog("main", "workspace empty, restoring from cache (age < %s)", workspaceRestoreTTL)
-			ctx.Stdin.Workspace = cached.CachedStdin.Workspace
-			if ctx.Stdin.Worktree == nil {
-				ctx.Stdin.Worktree = cached.CachedStdin.Worktree
-			}
-		}
-
-		if usageDegraded {
-			debugLog("main", "degraded input (widgets=%d, cached=%d), restoring usage fields from cache", result.WidgetCount, cached.WidgetCount)
-			restoreUsageFields(&ctx.Stdin, cached.CachedStdin)
-		}
-
-		if costRegressed {
-			debugLog("main", "cost regressed to 0 (cached=%.4f), restoring cost from cache", cached.CachedStdin.Cost.TotalCostUsd)
-			ctx.Stdin.Cost = cached.CachedStdin.Cost
-		}
-
-		if restoreWorkspace || usageDegraded || costRegressed {
-			result = orchestrate(ctx)
-		}
+	// Degraded input: single eligibility decision determines whether any field
+	// from the session cache is used to backfill the current stdin. All fields
+	// are restored together (atomic) or not at all, preventing half-populated
+	// status lines (SPEC §5.1–§5.3, ANALYSIS §1–§2).
+	var restoredMask restoredFieldMask
+	if shouldRestoreFromSession(ctx.Stdin, cached, time.Now()) {
+		restoredMask = fillFromSessionCache(&ctx.Stdin, cached)
+		debugLog("main", "session cache backfill: mask=%+v", restoredMask)
+		result = orchestrate(ctx)
 	}
 
 	// Suppress output when stdin lacks any session identity (workspace, model,
@@ -151,10 +125,14 @@ func main() {
 
 	// Save stdin (not rendered strings) so a future degrade can re-render with
 	// fresh account-global values. Strip RateLimits: those must always come
-	// from the live API cache, never from stale session memory.
+	// from the live API cache, never from stale session memory. Also strip any
+	// fields that were backfilled from the session cache in this call so that
+	// a degraded-only call cannot perpetuate cached values via repeated saves
+	// (SPEC §5.6, ANALYSIS §5.D, adopted D1).
 	if result.WidgetCount >= 2 {
 		snapshot := ctx.Stdin
 		snapshot.RateLimits = nil
+		stripRestoredFields(&snapshot, restoredMask)
 		saveSessionState(cacheKey, &SessionState{
 			CachedStdin: &snapshot,
 			WidgetCount: result.WidgetCount,
@@ -235,22 +213,6 @@ func shouldRestoreWorkspace(cachedCwd string) bool {
 		return false
 	}
 	return true
-}
-
-// restoreUsageFields fills empty cost / context_window fields on stdin from a
-// cached snapshot. Each field is restored independently so a partially-degraded
-// stdin keeps whatever fresh data it does carry. Pure function; safe to test
-// without spinning up main().
-func restoreUsageFields(stdin *StdinInput, cached *StdinInput) {
-	if stdin == nil || cached == nil {
-		return
-	}
-	if stdin.Cost.TotalCostUsd <= 0 {
-		stdin.Cost = cached.Cost
-	}
-	if stdin.ContextWindow.TotalInputTokens+stdin.ContextWindow.TotalOutputTokens == 0 {
-		stdin.ContextWindow = cached.ContextWindow
-	}
 }
 
 // shouldSuppressOutput reports whether main should emit nothing to stdout.

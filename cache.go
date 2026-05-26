@@ -16,13 +16,15 @@ import (
 // TTL because they are re-fetched from the account-global API cache each run.
 const sessionStateTTL = 300 * time.Second
 
-// workspaceRestoreTTL limits how recently cached workspace/worktree fields
-// can be restored on degrade. Correctness against stale cwd is guaranteed by
-// the cwd-match guard (SPEC §5.11); this TTL is the secondary safety bound
-// that caps how long a guarded restore can still expose a stale path if the
-// guard itself cannot determine the current cwd. v0.3.4 aligned this with
-// sessionStateTTL (300s); v0.3.7 shortens it to 60s now that the guard owns
-// correctness, narrowing the worst-case stale window.
+// workspaceRestoreTTL is the single TTL that gates the atomic restore
+// eligibility decision — "should this degraded stdin be backfilled from the
+// session cache at all?" (ANALYSIS §5.C, adopted C2). When the cache entry's
+// age exceeds this bound, no field (workspace, model, cost, context) is
+// restored, preventing any half-populated status line. Intentionally narrower
+// than sessionStateTTL (300s): the cwd-exact-match guard owns cross-workspace
+// correctness; this TTL caps the worst-case stale window within the same
+// workspace. v0.3.4 aligned both TTLs at 300s; v0.3.7 tightened this to 60s;
+// the atomic-restore rework (v0.3.9) formalises it as the sole eligibility TTL.
 const workspaceRestoreTTL = 60 * time.Second
 
 const (
@@ -358,18 +360,136 @@ func cleanOldSessionStates() {
 	}
 }
 
-// shouldRestoreCost reports whether stdin.cost should be restored from
-// cached state. Returns true only when stdin reports cost=0 while the cache
-// still holds a positive cost saved within sessionStateTTL. Pure function —
-// safe to test in isolation.
-func shouldRestoreCost(stdin StdinInput, cached *SessionState, now time.Time) bool {
+// restoredFieldMask records which StdinInput fields were backfilled from the
+// session cache by fillFromSessionCache in a single call. task-004 uses the
+// mask to strip those fields back out of the save snapshot so a degraded-only
+// call cannot self-perpetuate cached values via repeated saves.
+type restoredFieldMask struct {
+	Workspace     bool
+	Worktree      bool
+	Model         bool
+	Cost          bool
+	ContextWindow bool
+}
+
+// shouldRestoreFromSession returns true when the cached SessionState is
+// eligible to backfill missing fields in the current (degraded) stdin.
+//
+// Checks in order:
+//  1. cached != nil and cached.CachedStdin != nil
+//  2. SavedAt > 0 and age < workspaceRestoreTTL (atomic-restore TTL, §5.C C2)
+//  3. shouldRestoreWorkspace(cached cwd) — cwd-exact-match guard
+//  4. At least one backfill-eligible field is actually empty in stdin
+//
+// Any failing step is logged via debugLog and false is returned immediately.
+// Pure function: does not mutate stdin or cached.
+func shouldRestoreFromSession(stdin StdinInput, cached *SessionState, now time.Time) bool {
 	if cached == nil || cached.CachedStdin == nil {
+		debugLog("restore", "eligibility=false: no cached state")
 		return false
 	}
-	return stdin.Cost.TotalCostUsd == 0 &&
-		cached.CachedStdin.Cost.TotalCostUsd > 0 &&
-		cached.SavedAt > 0 &&
-		now.Sub(time.Unix(cached.SavedAt, 0)) < sessionStateTTL
+	if cached.SavedAt <= 0 {
+		debugLog("restore", "eligibility=false: SavedAt == 0")
+		return false
+	}
+	if now.Sub(time.Unix(cached.SavedAt, 0)) >= workspaceRestoreTTL {
+		debugLog("restore", "eligibility=false: cache age %v >= workspaceRestoreTTL %v",
+			now.Sub(time.Unix(cached.SavedAt, 0)), workspaceRestoreTTL)
+		return false
+	}
+	if !shouldRestoreWorkspace(cached.CachedStdin.Workspace.CurrentDir) {
+		debugLog("restore", "eligibility=false: cwd mismatch or unknown")
+		return false
+	}
+	// At least one fillable field must be empty in stdin.
+	needsFill := stdin.Workspace.CurrentDir == "" ||
+		stdin.Worktree == nil ||
+		(stdin.Model.ID == "" && stdin.Model.DisplayName == "") ||
+		stdin.Cost.TotalCostUsd <= 0 ||
+		stdin.ContextWindow.TotalInputTokens+stdin.ContextWindow.TotalOutputTokens == 0
+	if !needsFill {
+		debugLog("restore", "eligibility=false: stdin has no empty fields requiring fill")
+		return false
+	}
+	return true
+}
+
+// fillFromSessionCache backfills empty fields in *stdin from cached.CachedStdin.
+// Only fields whose stdin side is empty (per field-local emptiness rules) are
+// filled; fresh values that stdin already carries are never overwritten.
+// RateLimits is never touched — it must always come from the live API cache.
+// Returns a restoredFieldMask describing which fields were actually written.
+//
+// Callers must check shouldRestoreFromSession before calling this function.
+func fillFromSessionCache(stdin *StdinInput, cached *SessionState) restoredFieldMask {
+	var mask restoredFieldMask
+	if stdin == nil || cached == nil || cached.CachedStdin == nil {
+		return mask
+	}
+	c := cached.CachedStdin
+
+	if stdin.Workspace.CurrentDir == "" && c.Workspace.CurrentDir != "" {
+		stdin.Workspace = c.Workspace
+		mask.Workspace = true
+		debugLog("restore", "filled Workspace.CurrentDir from cache")
+	}
+	if stdin.Worktree == nil && c.Worktree != nil {
+		stdin.Worktree = c.Worktree
+		mask.Worktree = true
+		debugLog("restore", "filled Worktree from cache")
+	}
+	if stdin.Model.ID == "" && stdin.Model.DisplayName == "" &&
+		(c.Model.ID != "" || c.Model.DisplayName != "") {
+		stdin.Model = c.Model
+		mask.Model = true
+		debugLog("restore", "filled Model from cache")
+	}
+	if stdin.Cost.TotalCostUsd <= 0 && c.Cost.TotalCostUsd > 0 {
+		stdin.Cost = c.Cost
+		mask.Cost = true
+		debugLog("restore", "filled Cost from cache")
+	}
+	if stdin.ContextWindow.TotalInputTokens+stdin.ContextWindow.TotalOutputTokens == 0 &&
+		c.ContextWindow.TotalInputTokens+c.ContextWindow.TotalOutputTokens > 0 {
+		stdin.ContextWindow = c.ContextWindow
+		mask.ContextWindow = true
+		debugLog("restore", "filled ContextWindow from cache")
+	}
+	return mask
+}
+
+// stripRestoredFields zeros out the fields in snapshot that were backfilled
+// from the session cache by fillFromSessionCache in this call, as indicated
+// by mask. This prevents degraded-only calls from perpetually refreshing cached
+// values via repeated saves — each save carries only data that arrived fresh
+// in stdin (SPEC §5.6, ANALYSIS §5.D, adopted D1).
+//
+// Fields whose mask bit is false are left unchanged. RateLimits is handled
+// separately by the caller (snapshot.RateLimits = nil) and is never tracked in
+// the mask. SavedAt is unaffected — it is set by saveSessionState itself.
+func stripRestoredFields(snapshot *StdinInput, mask restoredFieldMask) {
+	if snapshot == nil {
+		return
+	}
+	if mask.Workspace {
+		var zero StdinInput
+		snapshot.Workspace = zero.Workspace
+	}
+	if mask.Worktree {
+		snapshot.Worktree = nil
+	}
+	if mask.Model {
+		var zero StdinInput
+		snapshot.Model = zero.Model
+	}
+	if mask.Cost {
+		var zero StdinInput
+		snapshot.Cost = zero.Cost
+	}
+	if mask.ContextWindow {
+		var zero StdinInput
+		snapshot.ContextWindow = zero.ContextWindow
+	}
 }
 
 func saveSessionState(cacheKey string, state *SessionState) {
