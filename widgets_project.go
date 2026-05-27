@@ -33,7 +33,10 @@ func (w projectInfoWidget) ID() string { return "projectInfo" }
 func (w projectInfoWidget) GetData(ctx *Context) (any, error) {
 	currentDir := ctx.Stdin.Workspace.CurrentDir
 	if currentDir == "" {
-		return nil, nil
+		currentDir = detectCurrentCwd()
+		if currentDir == "" {
+			return nil, nil
+		}
 	}
 
 	// home-tilde compression + segment-aware shrink. UserHomeDir failure

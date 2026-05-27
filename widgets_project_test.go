@@ -6,6 +6,109 @@ import (
 	"unicode/utf8"
 )
 
+// TestProjectInfoGetDataCwdFallback checks that projectInfoWidget.GetData uses
+// detectCurrentCwd() as a fallback when Workspace.CurrentDir is empty, and
+// returns nil when detectCurrentCwd() also returns "" (SPEC §5.4, task-007).
+func TestProjectInfoGetDataCwdFallback(t *testing.T) {
+	w := projectInfoWidget{}
+
+	t.Run("빈 workspace + detectCurrentCwd 값 있음 → DisplayPath 채워짐", func(t *testing.T) {
+		// swap detectCwdEnv/detectCwdGetwd so detectCurrentCwd() returns a known path
+		origEnv := detectCwdEnv
+		origGetwd := detectCwdGetwd
+		defer func() {
+			detectCwdEnv = origEnv
+			detectCwdGetwd = origGetwd
+		}()
+
+		const fakeCwd = "/fake/project/dir"
+		detectCwdEnv = func(key string) string { return "" }
+		detectCwdGetwd = func() (string, error) { return fakeCwd, nil }
+
+		ctx := &Context{
+			Stdin:  StdinInput{},
+			Config: Config{},
+		}
+		data, err := w.GetData(ctx)
+		if err != nil {
+			t.Fatalf("GetData returned error: %v", err)
+		}
+		if data == nil {
+			t.Fatal("GetData returned nil, want non-nil projectInfoData")
+		}
+		d, ok := data.(*projectInfoData)
+		if !ok {
+			t.Fatalf("GetData returned unexpected type %T", data)
+		}
+		if d.DisplayPath == "" {
+			t.Fatal("DisplayPath is empty, want non-empty path from fallback cwd")
+		}
+		// fakeCwd base should appear in DisplayPath
+		if !strings.Contains(d.DisplayPath, "dir") {
+			t.Errorf("DisplayPath %q does not contain expected segment 'dir'", d.DisplayPath)
+		}
+	})
+
+	t.Run("빈 workspace + detectCurrentCwd 빈 문자열 → nil(기존 동작)", func(t *testing.T) {
+		origEnv := detectCwdEnv
+		origGetwd := detectCwdGetwd
+		defer func() {
+			detectCwdEnv = origEnv
+			detectCwdGetwd = origGetwd
+		}()
+
+		detectCwdEnv = func(key string) string { return "" }
+		detectCwdGetwd = func() (string, error) { return "", nil }
+
+		ctx := &Context{
+			Stdin:  StdinInput{},
+			Config: Config{},
+		}
+		data, err := w.GetData(ctx)
+		if err != nil {
+			t.Fatalf("GetData returned error: %v", err)
+		}
+		if data != nil {
+			t.Fatalf("GetData returned %v, want nil when cwd is unknown", data)
+		}
+	})
+
+	t.Run("정상 Workspace.CurrentDir → detectCurrentCwd 호출 없이 그대로 사용", func(t *testing.T) {
+		origEnv := detectCwdEnv
+		origGetwd := detectCwdGetwd
+		defer func() {
+			detectCwdEnv = origEnv
+			detectCwdGetwd = origGetwd
+		}()
+
+		// detectCurrentCwd가 호출되면 알 수 있도록 sentinal 경로를 반환하게 설정
+		detectCwdEnv = func(key string) string { return "/sentinel/path" }
+		detectCwdGetwd = func() (string, error) { return "/sentinel/path", nil }
+
+		const normalCwd = "/normal/workspace"
+		ctx := &Context{
+			Stdin:  StdinInput{},
+			Config: Config{},
+		}
+		ctx.Stdin.Workspace.CurrentDir = normalCwd
+		data, err := w.GetData(ctx)
+		if err != nil {
+			t.Fatalf("GetData returned error: %v", err)
+		}
+		if data == nil {
+			t.Fatal("GetData returned nil, want non-nil projectInfoData")
+		}
+		d := data.(*projectInfoData)
+		// sentinel 경로가 아닌 normalCwd 기반 경로여야 함
+		if strings.Contains(d.DisplayPath, "sentinel") {
+			t.Errorf("DisplayPath %q contains sentinel — detectCurrentCwd was called when it should not have been", d.DisplayPath)
+		}
+		if !strings.Contains(d.DisplayPath, "workspace") {
+			t.Errorf("DisplayPath %q does not contain expected 'workspace' segment", d.DisplayPath)
+		}
+	})
+}
+
 // TestProjectPathCompressHome covers the home-tilde compression branch of the
 // projectInfo path display helper (SPEC §5.1, §5.2). All inputs are
 // deterministic strings — no os.UserHomeDir / wall-clock dependency.

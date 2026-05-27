@@ -20,7 +20,7 @@
 
 실측 확인된 transcript 포맷(2026-05-26, Claude Code v2.1.150 표본):
 
-- 경로: `~/.claude/projects/-<encoded_cwd>/<session_id>.jsonl`. cwd 인코딩은 `/`와 `.`을 모두 `-`로 치환하는 forward-only 함수. lossy → reverse 디코딩 불가. forward만 필요(현재 cwd를 cc-usage가 알고 있음).
+- 경로: `~/.claude/projects/<encoded_cwd>/<session_id>.jsonl`. cwd 인코딩은 경로 구분자를 `-`로 치환하는 forward-only 함수. lossy → reverse 디코딩 불가. forward만 필요(현재 cwd를 cc-usage가 알고 있음). **치환 대상은 OS별로 다르다**: POSIX는 `/`·`.`, Windows는 `\`·`:`·`.`이 등장하므로 인코딩 함수는 `/`, `\`, `:`, `.` 네 구분자를 모두 `-`로 치환한다. Windows 실측(이 개발 환경): `C:\Users\zipke\GolandProjects\cc-usage` → `C--Users-zipke-GolandProjects-cc-usage` (즉 `C:\` → `C--`). `detectCurrentCwd()`가 Windows에서 backslash 경로를 반환하므로(`cache.go:130–138`의 `EvalSymlinks`/`Clean`), `/`·`.`만 치환하면 backslash가 남아 디렉토리 매칭이 항상 실패 → Windows에서 Layer 2 전체가 무력화된다. cross-platform 배포 바이너리이므로 네 구분자 처리 필수.
 - 각 line은 JSON entry, `type` 분류. 본 feature 소비 대상은 `type == "assistant"`. 다른 type(`user`, `system`, `attachment`, `file-history-snapshot`, `permission-mode`, `ai-title`, `last-prompt`, `queue-operation`)은 skip.
 - `assistant` entry top-level: `parentUuid, isSidechain, message, requestId, type, uuid, timestamp, userType, entrypoint, cwd, sessionId, version, gitBranch`. cost·duration 필드 **없음** — D1 (b) 정책의 단가표 합산 필요성 근거.
 - `message`: `model, id, type, role, content, stop_reason, stop_sequence, stop_details, usage, diagnostics`.
@@ -144,7 +144,7 @@ orchestrate 호출 횟수: 정상 stdin은 1회. Layer 1 적용 시 2회. Layer 
 
 | 함수 | 시그니처(가이드) | 책임 |
 |---|---|---|
-| `encodeCwdToTranscriptDir` | `func(home, cwd string) string` | cwd → `<home>/.claude/projects/-<encoded>`. `/`·`.` → `-` |
+| `encodeCwdToTranscriptDir` | `func(home, cwd string) string` | cwd → `<home>/.claude/projects/<encoded>`. `/`, `\`, `:`, `.` → `-` (OS 무관 동일 규칙, Windows backslash·드라이브 콜론 포함) |
 | `selectTranscriptCandidate` | `func(dir string) (string, error)` | 디렉토리 안의 `*.jsonl` 중 newest mtime, 동률은 lex sort |
 | `readLastAssistantEntry` | `func(path string, initialWindow, maxWindow int) (*transcriptEntry, error)` | tail read window 역방향 line scan. partial line skip |
 | `applyTranscriptToStdin` | `func(stdin *StdinInput, entry *transcriptEntry, oneMSignal bool) restoredFieldMask` | model + usage + cost(estimated) backfill |

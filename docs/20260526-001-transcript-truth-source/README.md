@@ -6,7 +6,7 @@ Claude Code의 transcript 파일을 cc-usage status line의 진실 소스로 받
 ## 상태
 - [x] SPEC
 - [x] ANALYSIS
-- [ ] IMPLEMENT
+- [x] IMPLEMENT
 
 ## 문서
 - [spec.md](./spec.md)
@@ -16,3 +16,6 @@ Claude Code의 transcript 파일을 cc-usage status line의 진실 소스로 받
 ## 작업 히스토리
 - 2026-05-26: SPEC 작성
 - 2026-05-26: ANALYSIS 작성 + SPEC §3에 D1=(b)/D2=(ii) 결정 commit, §5.4 도입 출처 정정
+- 2026-05-27: 인코딩 규칙 정정 — `/`·`.`만 → `/`,`\`,`:`,`.` 네 구분자 치환(Windows backslash·드라이브 콜론 포함). SPEC §3 + analysis 실측/인터페이스 전파
+- 2026-05-27: IMPLEMENT 체크리스트 작성
+- 2026-05-27: task-001~015 구현·verify 완료 (전 Task approved, v0.3.11 bump)

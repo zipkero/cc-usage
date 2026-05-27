@@ -64,7 +64,7 @@ var cleanOldCachesFn = cleanOldCaches
 
 const (
 	apiURL           = "https://api.anthropic.com/api/oauth/usage"
-	userAgent        = "cc-usage/0.3.10"
+	userAgent        = "cc-usage/0.3.11"
 	apiBeta          = "oauth-2025-04-20"
 	staleCacheMaxAge = time.Hour
 	apiTimeout       = 2 * time.Second

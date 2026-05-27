@@ -99,6 +99,79 @@ func main() {
 		result = orchestrate(ctx)
 	}
 
+	// Layer 2: transcript backfill (TTL 무관, estimated cost).
+	// Layer 1 이후에도 model/ContextWindow가 여전히 비어있을 때만 발동한다.
+	// entry.cwd × normalizeCwd 정확 일치 가드(D4)로 cross-cwd 노출 0 보장.
+	if needsTranscriptBackfill(ctx.Stdin) {
+		debugLog("transcript", "Layer 2 triggered: model=%q contextWindowSize=%d",
+			ctx.Stdin.Model.ID, ctx.Stdin.ContextWindow.ContextWindowSize)
+		cwd := detectCurrentCwd()
+		if cwd == "" {
+			debugLog("transcript", "Layer 2 skipped: cwd undetectable")
+		} else {
+			debugLog("transcript", "Layer 2 cwd detected: %s", cwd)
+		}
+		transcriptPath := ctx.Stdin.TranscriptPath
+		if transcriptPath != "" {
+			debugLog("transcript", "transcriptPath from stdin.transcript_path: %s", transcriptPath)
+		} else if cwd != "" {
+			home, homeErr := os.UserHomeDir()
+			if homeErr != nil {
+				debugLog("transcript", "Layer 2 skipped: home dir unavailable: %v", homeErr)
+			} else {
+				transcriptDir := encodeCwdToTranscriptDir(home, cwd)
+				if candidate, err := selectTranscriptCandidate(transcriptDir); err == nil {
+					transcriptPath = candidate
+					debugLog("transcript", "transcriptPath selected from encoded dir: %s", transcriptPath)
+				} else {
+					debugLog("transcript", "no transcript candidate for cwd=%s dir=%s: %v", cwd, transcriptDir, err)
+				}
+			}
+		}
+		if transcriptPath != "" {
+			const initialWindow = 64 * 1024      // 64KB
+			const maxWindow = 1 * 1024 * 1024    // 1MB
+			entry, err := readLastAssistantEntry(transcriptPath, initialWindow, maxWindow)
+			if err != nil {
+				debugLog("transcript", "readLastAssistantEntry error path=%s: %v", transcriptPath, err)
+			} else if entry != nil {
+				debugLog("transcript", "readLastAssistantEntry ok: model=%q entry.cwd=%q", entry.Model, entry.Cwd)
+				// D4 가드: entry.cwd × normalizeCwd 정확 일치 시에만 적용
+				entryCwdNorm := normalizeCwd(entry.Cwd)
+				if cwd != "" && entryCwdNorm == cwd {
+					oneMSignal := loadLastKnownOneM(cwd)
+					mask2 := applyTranscriptToStdin(&ctx.Stdin, entry, oneMSignal)
+					// Layer 1·2 mask 통합 (D8): stripRestoredFields가 두 layer 모두 vacate
+					if mask2.Model {
+						restoredMask.Model = true
+					}
+					if mask2.Cost {
+						restoredMask.Cost = true
+					}
+					if mask2.ContextWindow {
+						restoredMask.ContextWindow = true
+					}
+					ctx.CostEstimated = true // D6: transcript cost는 항상 estimated
+					debugLog("transcript", "Layer 2 applied: model=%s oneMSignal=%v mask=%+v",
+						ctx.Stdin.Model.ID, oneMSignal, mask2)
+					result = orchestrate(ctx)
+				} else {
+					debugLog("transcript", "Layer 2 D4 guard blocked: entry.cwd=%q (norm=%q) != current=%q",
+						entry.Cwd, entryCwdNorm, cwd)
+				}
+			} else {
+				debugLog("transcript", "no assistant entry found in transcript: %s", transcriptPath)
+			}
+		} else if cwd == "" {
+			// cwd 미식별로 transcriptPath를 결정하지 못한 경우 — 이미 위에서 로그함
+		} else {
+			debugLog("transcript", "Layer 2 skipped: no transcriptPath resolved for cwd=%s", cwd)
+		}
+	} else {
+		debugLog("transcript", "Layer 2 not needed: model=%q contextWindowSize=%d",
+			ctx.Stdin.Model.ID, ctx.Stdin.ContextWindow.ContextWindowSize)
+	}
+
 	// Suppress output when stdin lacks any session identity (workspace, model,
 	// context) even after cache restoration. Without this, cost/rate-limit
 	// widgets — which render unconditionally — would produce partial output
@@ -131,6 +204,17 @@ func main() {
 
 	if partsOutput != "" {
 		fmt.Print(partsOutput)
+	}
+
+	// task-011: last-known [1m] 저장 트리거.
+	// 원본 stdin(input, backfill 이전)이 [1m] 신호를 직접 들고 왔고 cwd가
+	// 식별될 때만 저장한다. transcript backfill로 채워진 ctx.Stdin은 base ID만
+	// 가지므로 참조하지 않는다(SPEC §5.3, ANALYSIS §5 D2, D10).
+	if strings.Contains(input.Model.ID, "[1m]") {
+		if triggerCwd := detectCurrentCwd(); triggerCwd != "" {
+			saveLastKnownOneM(triggerCwd, true)
+			debugLog("main", "saved last-known [1m] for cwd=%s", triggerCwd)
+		}
 	}
 
 	// Save stdin (not rendered strings) so a future degrade can re-render with

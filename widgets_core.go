@@ -109,6 +109,11 @@ func (w contextWidget) Render(data any, ctx *Context) string {
 
 // --- cost widget ---
 
+// estimatedCostMarker is the prefix used to indicate an estimated cost value.
+// "~" is the universally recognized "approximately" symbol and requires no
+// locale translation — it is unambiguous in both en and ko contexts.
+const estimatedCostMarker = "~"
+
 type costWidget struct{}
 
 func (w costWidget) ID() string { return "cost" }
@@ -123,7 +128,14 @@ func (w costWidget) GetData(ctx *Context) (any, error) {
 
 func (w costWidget) Render(data any, ctx *Context) string {
 	cost := data.(float64)
+	// When estimated but cost is not available (pricing table miss), skip widget.
+	if ctx.CostEstimated && cost <= 0 {
+		return ""
+	}
 	theme := getTheme(ctx.Config.Theme)
+	if ctx.CostEstimated {
+		return fmt.Sprintf("%s%s%s%s", theme.Accent, estimatedCostMarker, formatCost(cost), RESET)
+	}
 	return fmt.Sprintf("%s%s%s", theme.Accent, formatCost(cost), RESET)
 }
 

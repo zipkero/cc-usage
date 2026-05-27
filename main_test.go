@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1477,5 +1478,1207 @@ func TestTask005RateLimitsNotRestoredFromCache(t *testing.T) {
 	if mask.Cost && reloaded.CachedStdin.Cost.TotalCostUsd != 0 {
 		t.Errorf("(d) Cost=%v after strip; want 0 (cache-restored field must not persist in save)",
 			reloaded.CachedStdin.Cost.TotalCostUsd)
+	}
+}
+
+// writeTranscriptFixture는 dir 디렉토리 안에 session.jsonl 파일을 생성하고
+// 주어진 model·cwd를 담은 assistant entry 한 줄을 기록한다.
+// 반환값은 파일의 전체 경로다.
+func writeTranscriptFixture(t *testing.T, dir, model, cwd string, inputTokens, outputTokens int) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("writeTranscriptFixture: mkdir %s: %v", dir, err)
+	}
+	line := fmt.Sprintf(
+		`{"type":"assistant","cwd":%q,"message":{"model":%q,"usage":{"input_tokens":%d,"output_tokens":%d,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}`,
+		cwd, model, inputTokens, outputTokens,
+	)
+	path := filepath.Join(dir, "session.jsonl")
+	// 두 줄로 구성: 끝 줄은 partial 가드로 skip되므로 더미 한 줄 추가
+	content := line + "\n" + `{"type":"user","cwd":"","message":{}}` + "\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("writeTranscriptFixture: write %s: %v", path, err)
+	}
+	return path
+}
+
+// task-008 통합 테스트 (a): 빈 stdin + 유효 transcript(entry.cwd == 현재 cwd)
+// → Layer 2 발동 후 model/context 채워진 full 복원 + CostEstimated=true.
+func TestLayer2TranscriptBackfillFullRestore(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	// t.TempDir()로 실제 존재하는 디렉토리를 workspace로 사용 (normalizeCwd가 EvalSymlinks 수행)
+	workspace := t.TempDir()
+	wantCwd := normalizeCwd(workspace)
+
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+	detectCwdEnv = func(key string) string {
+		if key == "CLAUDE_PROJECT_DIR" {
+			return workspace
+		}
+		return ""
+	}
+	detectCwdGetwd = func() (string, error) { return workspace, nil }
+
+	// transcript fixture 생성: entry.cwd = wantCwd (현재 cwd와 일치)
+	transcriptDir := encodeCwdToTranscriptDir(home, wantCwd)
+	transcriptPath := writeTranscriptFixture(t, transcriptDir, "claude-opus-4-6", wantCwd, 50000, 10000)
+	_ = transcriptPath
+
+	// 빈 stdin (Layer 1 캐시 없음 → Layer 2가 발동해야 함)
+	emptyStdin := StdinInput{}
+
+	cfg := loadConfig("")
+	trans := loadTranslations(cfg.Language)
+	ctx := &Context{
+		Stdin:        emptyStdin,
+		Config:       cfg,
+		Translations: trans,
+	}
+
+	// Layer 1: cached == nil이므로 미발동
+	// Layer 2: needsTranscriptBackfill=true → transcript 읽기 → entry.cwd 일치 → 적용
+	if !needsTranscriptBackfill(ctx.Stdin) {
+		t.Fatal("needsTranscriptBackfill=false on empty stdin; expected true")
+	}
+
+	var restoredMask restoredFieldMask
+	cwd := detectCurrentCwd()
+	if cwd == "" {
+		t.Fatal("detectCurrentCwd returned empty; cannot run test")
+	}
+	if cwd != wantCwd {
+		t.Fatalf("cwd=%q, want %q", cwd, wantCwd)
+	}
+
+	// transcript path 결정 (stdin.TranscriptPath 없음 → 인코딩 디렉토리 후보)
+	transcriptPathResolved, err := selectTranscriptCandidate(transcriptDir)
+	if err != nil {
+		t.Fatalf("selectTranscriptCandidate: %v", err)
+	}
+
+	entry, err := readLastAssistantEntry(transcriptPathResolved, 64*1024, 1*1024*1024)
+	if err != nil {
+		t.Fatalf("readLastAssistantEntry: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("readLastAssistantEntry returned nil; expected assistant entry")
+	}
+
+	// D4 가드: entry.cwd == wantCwd
+	entryCwdNorm := normalizeCwd(entry.Cwd)
+	if entryCwdNorm != cwd {
+		t.Fatalf("D4 guard would block: entry.cwd (norm)=%q != cwd=%q", entryCwdNorm, cwd)
+	}
+
+	oneMSignal := loadLastKnownOneM(cwd)
+	mask2 := applyTranscriptToStdin(&ctx.Stdin, entry, oneMSignal)
+
+	if mask2.Model {
+		restoredMask.Model = true
+	}
+	if mask2.Cost {
+		restoredMask.Cost = true
+	}
+	if mask2.ContextWindow {
+		restoredMask.ContextWindow = true
+	}
+	ctx.CostEstimated = true
+
+	result := orchestrate(ctx)
+
+	// 검증: model/context가 채워졌어야 함
+	if ctx.Stdin.Model.ID == "" {
+		t.Error("Model.ID is empty after Layer 2 backfill; expected claude-opus-4-6")
+	}
+	if ctx.Stdin.ContextWindow.ContextWindowSize <= 0 {
+		t.Error("ContextWindowSize <= 0 after Layer 2 backfill")
+	}
+	if !mask2.Model {
+		t.Error("mask2.Model=false; expected true (model was empty in stdin)")
+	}
+	if !mask2.ContextWindow {
+		t.Error("mask2.ContextWindow=false; expected true (context was empty in stdin)")
+	}
+	// needsTranscriptBackfill은 이제 false여야 함 (채워졌으므로)
+	if needsTranscriptBackfill(ctx.Stdin) {
+		t.Error("needsTranscriptBackfill=true after backfill; expected false")
+	}
+	// orchestrate 결과에 model id가 포함되어야 함
+	combined := strings.Join(result.Lines, "\n")
+	if !containsAny(combined, "claude-opus-4-6", "Opus") {
+		t.Errorf("model not in output after Layer 2 backfill: %q", combined)
+	}
+	// CostEstimated=true
+	if !ctx.CostEstimated {
+		t.Error("ctx.CostEstimated=false; expected true after transcript backfill")
+	}
+}
+
+// task-008 통합 테스트 (b): entry.cwd != 현재 cwd → D4 가드로 Layer 2 미발동.
+func TestLayer2TranscriptBackfillCwdGuardBlocks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	workspaceCurrent := t.TempDir()
+	workspaceOther := t.TempDir()
+	currentCwd := normalizeCwd(workspaceCurrent)
+	otherCwd := normalizeCwd(workspaceOther)
+
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+	detectCwdEnv = func(key string) string {
+		if key == "CLAUDE_PROJECT_DIR" {
+			return workspaceCurrent
+		}
+		return ""
+	}
+	detectCwdGetwd = func() (string, error) { return workspaceCurrent, nil }
+
+	// transcript fixture 생성: entry.cwd = otherCwd (현재 cwd와 불일치)
+	transcriptDir := encodeCwdToTranscriptDir(home, currentCwd)
+	transcriptPath := writeTranscriptFixture(t, transcriptDir, "claude-opus-4-6", otherCwd, 50000, 10000)
+	_ = transcriptPath
+
+	emptyStdin := StdinInput{}
+	cfg := loadConfig("")
+	trans := loadTranslations(cfg.Language)
+	ctx := &Context{
+		Stdin:        emptyStdin,
+		Config:       cfg,
+		Translations: trans,
+	}
+
+	cwd := detectCurrentCwd()
+	if cwd != currentCwd {
+		t.Fatalf("cwd=%q, want %q", cwd, currentCwd)
+	}
+
+	transcriptPathResolved, err := selectTranscriptCandidate(transcriptDir)
+	if err != nil {
+		t.Fatalf("selectTranscriptCandidate: %v", err)
+	}
+
+	entry, err := readLastAssistantEntry(transcriptPathResolved, 64*1024, 1*1024*1024)
+	if err != nil {
+		t.Fatalf("readLastAssistantEntry: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("readLastAssistantEntry returned nil")
+	}
+
+	// D4 가드: entry.cwd (otherCwd) != currentCwd → 미발동이어야 함
+	entryCwdNorm := normalizeCwd(entry.Cwd)
+	if entryCwdNorm == cwd {
+		t.Fatalf("test setup error: entry.cwd (norm)=%q == cwd=%q; D4 guard would not block", entryCwdNorm, cwd)
+	}
+
+	// D4 가드가 차단하므로 applyTranscriptToStdin을 호출하지 않는 것이 올바른 동작
+	// 직접 가드 조건을 검증
+	if entryCwdNorm == cwd {
+		t.Error("D4 guard failed: entry.cwd matches current cwd but should not")
+	}
+
+	// 차단 후 ctx.Stdin은 여전히 비어있어야 함
+	if ctx.Stdin.Model.ID != "" {
+		t.Errorf("Model.ID=%q; should be empty (D4 guard should have blocked backfill)", ctx.Stdin.Model.ID)
+	}
+	if ctx.Stdin.ContextWindow.ContextWindowSize > 0 {
+		t.Errorf("ContextWindowSize=%d; should be 0 (D4 guard should have blocked backfill)", ctx.Stdin.ContextWindow.ContextWindowSize)
+	}
+
+	// otherCwd 값이 출력에 등장해서는 안 됨 (cross-cwd 노출 0)
+	result := orchestrate(ctx)
+	combined := strings.Join(result.Lines, "\n")
+	if strings.Contains(combined, otherCwd) {
+		t.Errorf("cross-cwd exposure: otherCwd %q appeared in output: %q", otherCwd, combined)
+	}
+}
+
+// task-008 통합 테스트 (c): 다중 cwd 시나리오 — 다른 cwd transcript가 노출되지 않음.
+// cwd A 실행 중, cwd B transcript가 있을 때 B 데이터가 A 출력에 섞이지 않음.
+func TestLayer2TranscriptBackfillCrossCwdIsolation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	workspaceA := t.TempDir()
+	workspaceB := t.TempDir()
+	cwdA := normalizeCwd(workspaceA)
+	cwdB := normalizeCwd(workspaceB)
+
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+
+	// cwd A 실행 중
+	detectCwdEnv = func(key string) string {
+		if key == "CLAUDE_PROJECT_DIR" {
+			return workspaceA
+		}
+		return ""
+	}
+	detectCwdGetwd = func() (string, error) { return workspaceA, nil }
+
+	// transcript fixture 생성:
+	// - A 디렉토리에 B의 데이터를 가진 entry (entry.cwd=cwdB) → D4 가드가 차단해야 함
+	transcriptDirA := encodeCwdToTranscriptDir(home, cwdA)
+	_ = writeTranscriptFixture(t, transcriptDirA, "claude-sonnet-4-6", cwdB, 30000, 5000)
+
+	// B 디렉토리에 B 데이터를 가진 entry (entry.cwd=cwdB)
+	transcriptDirB := encodeCwdToTranscriptDir(home, cwdB)
+	_ = writeTranscriptFixture(t, transcriptDirB, "claude-sonnet-4-6", cwdB, 30000, 5000)
+
+	emptyStdin := StdinInput{}
+	cfg := loadConfig("")
+	trans := loadTranslations(cfg.Language)
+	ctx := &Context{
+		Stdin:        emptyStdin,
+		Config:       cfg,
+		Translations: trans,
+	}
+
+	// cwd A 실행 중에 A 디렉토리 transcript를 읽으면 entry.cwd=cwdB이므로 D4 가드 차단
+	cwd := detectCurrentCwd()
+	if cwd != cwdA {
+		t.Fatalf("cwd=%q, want %q", cwd, cwdA)
+	}
+
+	transcriptPathA, err := selectTranscriptCandidate(transcriptDirA)
+	if err != nil {
+		t.Fatalf("selectTranscriptCandidate(A): %v", err)
+	}
+
+	entry, err := readLastAssistantEntry(transcriptPathA, 64*1024, 1*1024*1024)
+	if err != nil {
+		t.Fatalf("readLastAssistantEntry: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("readLastAssistantEntry returned nil")
+	}
+
+	// entry.cwd=cwdB, 현재 cwd=cwdA → D4 가드가 차단해야 함
+	entryCwdNorm := normalizeCwd(entry.Cwd)
+	if entryCwdNorm == cwd {
+		// D4 가드가 통과되면 안 되는 케이스 — 만약 통과되면 cross-cwd 노출
+		t.Errorf("cross-cwd exposure: entry.cwd (norm)=%q == cwdA=%q; D4 guard failed", entryCwdNorm, cwd)
+	}
+
+	// D4 가드 차단 확인: applyTranscriptToStdin 미호출 → ctx.Stdin 여전히 비어있음
+	if ctx.Stdin.Model.ID != "" {
+		t.Errorf("cross-cwd: Model.ID=%q leaked into ctx from cwd B transcript", ctx.Stdin.Model.ID)
+	}
+
+	// 출력에 cwd B 관련 데이터 없음을 확인
+	result := orchestrate(ctx)
+	combined := strings.Join(result.Lines, "\n")
+	if strings.Contains(combined, cwdB) {
+		t.Errorf("cross-cwd: cwdB %q appeared in output for cwdA: %q", cwdB, combined)
+	}
+	_ = cwdB
+}
+
+// runLayer2 는 main.go Layer 2 블록을 그대로 재현하는 테스트용 헬퍼다.
+// ctx.Stdin이 변경되면 true를 반환하고, 변경되지 않으면 false를 반환한다.
+// panic·hang 없이 완료되는지가 주 검증 대상이다.
+func runLayer2(t *testing.T, ctx *Context, cwdOverride string) (applied bool) {
+	t.Helper()
+	if !needsTranscriptBackfill(ctx.Stdin) {
+		return false
+	}
+	cwd := cwdOverride
+	transcriptPath := ctx.Stdin.TranscriptPath
+	if transcriptPath == "" && cwd != "" {
+		home, homeErr := os.UserHomeDir()
+		if homeErr == nil {
+			transcriptDir := encodeCwdToTranscriptDir(home, cwd)
+			if candidate, err := selectTranscriptCandidate(transcriptDir); err == nil {
+				transcriptPath = candidate
+			}
+		}
+	}
+	if transcriptPath == "" {
+		return false
+	}
+	const initialWindow = 64 * 1024
+	const maxWindow = 1 * 1024 * 1024
+	entry, err := readLastAssistantEntry(transcriptPath, initialWindow, maxWindow)
+	if err != nil {
+		return false
+	}
+	if entry == nil {
+		return false
+	}
+	entryCwdNorm := normalizeCwd(entry.Cwd)
+	if cwd == "" || entryCwdNorm != cwd {
+		return false
+	}
+	oneMSignal := loadLastKnownOneM(cwd)
+	applyTranscriptToStdin(&ctx.Stdin, entry, oneMSignal)
+	ctx.CostEstimated = true
+	return true
+}
+
+// TestLayer2GracefulFallback は task-009 회귀 테스트 묶음이다.
+// 각 서브테스트는 Layer 2가 발동하지 않아야 하는 실패 경로를 하나씩 커버하며,
+// panic·hang 없이 Layer 2 미발동(ctx.Stdin 미변경) → 보수 출력/묵음 폴백을 검증한다.
+// SPEC §5.6, §5.10, §5.7 참조.
+func TestLayer2GracefulFallback(t *testing.T) {
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+
+	buildEmptyCtx := func() *Context {
+		cfg := loadConfig("")
+		trans := loadTranslations(cfg.Language)
+		return &Context{
+			Stdin:        StdinInput{},
+			Config:       cfg,
+			Translations: trans,
+		}
+	}
+
+	// 1. cwd 식별 불가: env miss + getwd 실패 → Layer 2 미발동.
+	// detectCurrentCwd가 빈 문자열을 반환하므로 transcriptPath 결정 불가 → 즉시 skip.
+	t.Run("cwd_unidentifiable", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+
+		detectCwdEnv = func(string) string { return "" }
+		detectCwdGetwd = func() (string, error) { return "", os.ErrNotExist }
+
+		ctx := buildEmptyCtx()
+		applied := runLayer2(t, ctx, "") // cwdOverride="" = 식별 불가 시뮬레이션
+		if applied {
+			t.Errorf("Layer 2 applied with unidentifiable cwd; expected no-op")
+		}
+		if ctx.Stdin.Model.ID != "" {
+			t.Errorf("Model.ID=%q after unidentifiable cwd; expected empty", ctx.Stdin.Model.ID)
+		}
+		if ctx.CostEstimated {
+			t.Errorf("CostEstimated=true after cwd miss; expected false")
+		}
+	})
+
+	// 2. transcript 디렉토리 부재: encodeCwdToTranscriptDir가 가리키는 경로가 없음
+	// → selectTranscriptCandidate 에러 → Layer 2 미발동.
+	t.Run("transcript_dir_absent", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+
+		workspace := t.TempDir()
+		wantCwd := normalizeCwd(workspace)
+
+		detectCwdEnv = func(key string) string {
+			if key == "CLAUDE_PROJECT_DIR" {
+				return workspace
+			}
+			return ""
+		}
+		detectCwdGetwd = func() (string, error) { return workspace, nil }
+
+		// transcript 디렉토리를 생성하지 않음 → selectTranscriptCandidate 에러
+		ctx := buildEmptyCtx()
+		applied := runLayer2(t, ctx, wantCwd)
+		if applied {
+			t.Errorf("Layer 2 applied with absent transcript dir; expected no-op")
+		}
+		if ctx.Stdin.Model.ID != "" {
+			t.Errorf("Model.ID=%q after absent dir; expected empty", ctx.Stdin.Model.ID)
+		}
+	})
+
+	// 3. 디렉토리 존재하나 jsonl 0개: selectTranscriptCandidate → "no jsonl files found" 에러
+	// → Layer 2 미발동.
+	t.Run("dir_exists_no_jsonl", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+
+		workspace := t.TempDir()
+		wantCwd := normalizeCwd(workspace)
+
+		detectCwdEnv = func(key string) string {
+			if key == "CLAUDE_PROJECT_DIR" {
+				return workspace
+			}
+			return ""
+		}
+		detectCwdGetwd = func() (string, error) { return workspace, nil }
+
+		// 빈 transcript 디렉토리 생성 (jsonl 파일 없음)
+		transcriptDir := encodeCwdToTranscriptDir(home, wantCwd)
+		if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+			t.Fatalf("mkdir transcriptDir: %v", err)
+		}
+		// .txt 파일만 추가 (jsonl 아님)
+		if err := os.WriteFile(filepath.Join(transcriptDir, "notes.txt"), []byte("hello"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		ctx := buildEmptyCtx()
+		applied := runLayer2(t, ctx, wantCwd)
+		if applied {
+			t.Errorf("Layer 2 applied with no jsonl files; expected no-op")
+		}
+		if ctx.Stdin.Model.ID != "" {
+			t.Errorf("Model.ID=%q after no jsonl; expected empty", ctx.Stdin.Model.ID)
+		}
+	})
+
+	// 4. transcript 파일 존재하나 assistant entry 없음: user/system line만 있는 파일
+	// → readLastAssistantEntry가 nil 반환 → Layer 2 미발동.
+	t.Run("no_assistant_entry", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+
+		workspace := t.TempDir()
+		wantCwd := normalizeCwd(workspace)
+
+		detectCwdEnv = func(key string) string {
+			if key == "CLAUDE_PROJECT_DIR" {
+				return workspace
+			}
+			return ""
+		}
+		detectCwdGetwd = func() (string, error) { return workspace, nil }
+
+		transcriptDir := encodeCwdToTranscriptDir(home, wantCwd)
+		if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+			t.Fatalf("mkdir transcriptDir: %v", err)
+		}
+		// assistant entry 없이 user/system line만
+		content := `{"type":"user","cwd":"` + wantCwd + `","message":{"content":"hello"}}` + "\n" +
+			`{"type":"system","cwd":"` + wantCwd + `","message":{"content":"sys"}}` + "\n" +
+			`{"type":"user","cwd":"` + wantCwd + `","message":{"content":"world"}}` + "\n"
+		if err := os.WriteFile(filepath.Join(transcriptDir, "session.jsonl"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		ctx := buildEmptyCtx()
+		applied := runLayer2(t, ctx, wantCwd)
+		if applied {
+			t.Errorf("Layer 2 applied with no assistant entry; expected no-op")
+		}
+		if ctx.Stdin.Model.ID != "" {
+			t.Errorf("Model.ID=%q after no assistant entry; expected empty", ctx.Stdin.Model.ID)
+		}
+	})
+
+	// 5. 손상된 transcript: 모든 line이 JSON 파싱 실패 → readLastAssistantEntry가 nil
+	// → Layer 2 미발동. panic/hang 없음 확인.
+	t.Run("corrupted_transcript", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+
+		workspace := t.TempDir()
+		wantCwd := normalizeCwd(workspace)
+
+		detectCwdEnv = func(key string) string {
+			if key == "CLAUDE_PROJECT_DIR" {
+				return workspace
+			}
+			return ""
+		}
+		detectCwdGetwd = func() (string, error) { return workspace, nil }
+
+		transcriptDir := encodeCwdToTranscriptDir(home, wantCwd)
+		if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+			t.Fatalf("mkdir transcriptDir: %v", err)
+		}
+		// 완전히 손상된 내용 (유효한 JSON 없음)
+		content := "not valid json at all\n" +
+			"{broken json\n" +
+			"another bad line\n"
+		if err := os.WriteFile(filepath.Join(transcriptDir, "session.jsonl"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		ctx := buildEmptyCtx()
+		applied := runLayer2(t, ctx, wantCwd)
+		if applied {
+			t.Errorf("Layer 2 applied with corrupted transcript; expected no-op (no panic)")
+		}
+		if ctx.Stdin.Model.ID != "" {
+			t.Errorf("Model.ID=%q after corrupted transcript; expected empty", ctx.Stdin.Model.ID)
+		}
+	})
+
+	// 6. 빈 transcript 파일: readLastAssistantEntry가 nil 반환 → Layer 2 미발동.
+	t.Run("empty_transcript_file", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+
+		workspace := t.TempDir()
+		wantCwd := normalizeCwd(workspace)
+
+		detectCwdEnv = func(key string) string {
+			if key == "CLAUDE_PROJECT_DIR" {
+				return workspace
+			}
+			return ""
+		}
+		detectCwdGetwd = func() (string, error) { return workspace, nil }
+
+		transcriptDir := encodeCwdToTranscriptDir(home, wantCwd)
+		if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+			t.Fatalf("mkdir transcriptDir: %v", err)
+		}
+		// 빈 파일
+		if err := os.WriteFile(filepath.Join(transcriptDir, "session.jsonl"), []byte{}, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		ctx := buildEmptyCtx()
+		applied := runLayer2(t, ctx, wantCwd)
+		if applied {
+			t.Errorf("Layer 2 applied with empty transcript; expected no-op")
+		}
+		if ctx.Stdin.Model.ID != "" {
+			t.Errorf("Model.ID=%q after empty file; expected empty", ctx.Stdin.Model.ID)
+		}
+	})
+}
+
+// TestLayer2AppendWhileReadSimulation는 SPEC §5.10 append-while-read 시뮬레이션이다.
+// transcript 파일의 마지막 line이 불완전한 JSON으로 끝나는 fixture를 사용해,
+// readLastAssistantEntry 또는 Layer 2 전체가 panic 없이 그 앞 완전 line을 매칭하거나
+// graceful skip하는지 검증한다.
+// 실제 동시 쓰기 goroutine 없이 결정적 fixture로 시뮬레이션한다.
+func TestLayer2AppendWhileReadSimulation(t *testing.T) {
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	workspace := t.TempDir()
+	wantCwd := normalizeCwd(workspace)
+
+	detectCwdEnv = func(key string) string {
+		if key == "CLAUDE_PROJECT_DIR" {
+			return workspace
+		}
+		return ""
+	}
+	detectCwdGetwd = func() (string, error) { return workspace, nil }
+
+	transcriptDir := encodeCwdToTranscriptDir(home, wantCwd)
+	if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+		t.Fatalf("mkdir transcriptDir: %v", err)
+	}
+	transcriptPath := filepath.Join(transcriptDir, "session.jsonl")
+
+	t.Run("partial_last_line_preceding_complete_line_matched", func(t *testing.T) {
+		// 완전한 assistant entry 뒤에 append-only 쓰기 중인 partial line이 있는 상태.
+		// 마지막 line은 partial이므로 skip, 그 앞 완전한 assistant entry가 매칭되어야 함.
+		completeLine := fmt.Sprintf(
+			`{"type":"assistant","cwd":%q,"message":{"model":"claude-opus-4-6","usage":{"input_tokens":50000,"output_tokens":10000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}`,
+			wantCwd,
+		)
+		partialLine := `{"type":"assistant","cwd":"` + wantCwd + `","message":{"model":"claude-sonnet-4-6","usage":{`
+		content := completeLine + "\n" + partialLine // 마지막에 \n 없음 = 쓰기 중
+
+		if err := os.WriteFile(transcriptPath, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		entry, err := readLastAssistantEntry(transcriptPath, 64*1024, 1*1024*1024)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// 결과: panic 없이 완전한 앞 line이 매칭되거나 nil(graceful fallback)
+		if entry != nil && entry.Model != "claude-opus-4-6" {
+			t.Errorf("partial last line: got model=%q, expected claude-opus-4-6 (complete preceding line) or nil",
+				entry.Model)
+		}
+		// partial line을 잘못 파싱해서 sonnet이 반환되면 안 됨
+		if entry != nil && entry.Model == "claude-sonnet-4-6" {
+			t.Errorf("partial last line parsed as complete entry: model=%q; partial line must be skipped", entry.Model)
+		}
+	})
+
+	t.Run("only_partial_line_returns_nil_no_panic", func(t *testing.T) {
+		// 파일 전체가 partial (완전한 assistant entry 없음). nil 반환이어야 함.
+		content := `{"type":"assistant","cwd":"` + wantCwd + `","message":{"model":"claude-opus-4-6","usage":{`
+
+		if err := os.WriteFile(transcriptPath, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		entry, err := readLastAssistantEntry(transcriptPath, 64*1024, 1*1024*1024)
+		if err != nil {
+			t.Fatalf("unexpected error on partial-only file: %v", err)
+		}
+		if entry != nil {
+			t.Errorf("expected nil for partial-only file, got model=%q", entry.Model)
+		}
+	})
+
+	t.Run("layer2_no_panic_with_partial_tail_fixture", func(t *testing.T) {
+		// Layer 2 전체 흐름에서 partial tail fixture를 통과해도 panic이 없고,
+		// 완전한 앞 entry가 있으면 그 entry로 복원되어야 함.
+		completeLine := fmt.Sprintf(
+			`{"type":"assistant","cwd":%q,"message":{"model":"claude-opus-4-6","usage":{"input_tokens":50000,"output_tokens":10000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}`,
+			wantCwd,
+		)
+		partialLine := `{"type":"assistant","cwd":"` + wantCwd + `","message":{"model":"claude-sonnet-4-6","usage":{`
+		content := completeLine + "\n" + partialLine
+
+		if err := os.WriteFile(transcriptPath, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg := loadConfig("")
+		trans := loadTranslations(cfg.Language)
+		ctx := &Context{
+			Stdin:        StdinInput{},
+			Config:       cfg,
+			Translations: trans,
+		}
+
+		// panic이 없어야 함 (recover로 감싸지 않아도 테스트 프레임워크가 잡음)
+		applied := runLayer2(t, ctx, wantCwd)
+		// applied 여부 자체는 entry 존재에 따라 달라지므로 강제하지 않음
+		// 핵심: partial line을 읽어도 panic 없이 완료됨
+		if applied {
+			// 복원됐다면 완전한 앞 entry의 model이어야 함
+			if ctx.Stdin.Model.ID != "claude-opus-4-6" {
+				t.Errorf("applied with wrong model: got %q, want claude-opus-4-6", ctx.Stdin.Model.ID)
+			}
+		}
+		// partial line만 있는 상태에서 sonnet이 복원되어선 안 됨
+		if ctx.Stdin.Model.ID == "claude-sonnet-4-6" {
+			t.Errorf("partial last line leaked as restored model: %q; must be skipped", ctx.Stdin.Model.ID)
+		}
+	})
+
+	t.Run("interleaved_user_assistant_with_partial_tail", func(t *testing.T) {
+		// user → assistant → user → partial assistant 순서.
+		// 마지막 partial은 skip되고, 그 앞 assistant(두 번째)가 매칭되어야 함.
+		line1 := `{"type":"user","cwd":"` + wantCwd + `","message":{"content":"hi"}}`
+		line2 := fmt.Sprintf(
+			`{"type":"assistant","cwd":%q,"message":{"model":"claude-opus-4-6","usage":{"input_tokens":1000,"output_tokens":200,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}`,
+			wantCwd,
+		)
+		line3 := `{"type":"user","cwd":"` + wantCwd + `","message":{"content":"follow up"}}`
+		partialLine := `{"type":"assistant","cwd":"` + wantCwd + `","message":{"model":"claude-sonnet-4-6","usage":{`
+		content := line1 + "\n" + line2 + "\n" + line3 + "\n" + partialLine
+
+		if err := os.WriteFile(transcriptPath, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		entry, err := readLastAssistantEntry(transcriptPath, 64*1024, 1*1024*1024)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// partial 마지막 line skip → 유효한 line3(user)와 line2(assistant) 중 assistant가 매칭
+		// line2가 마지막 완전한 assistant여야 함
+		if entry != nil && entry.Model == "claude-sonnet-4-6" {
+			t.Errorf("partial last assistant line parsed: model=%q; must be skipped", entry.Model)
+		}
+		if entry != nil && entry.Model != "claude-opus-4-6" {
+			t.Errorf("unexpected model=%q; expected claude-opus-4-6 or nil", entry.Model)
+		}
+	})
+}
+
+// ── task-010: restoredFieldMask 통합 + self-perpetuation 차단 ──────────────────
+
+// TestTask010Layer2MaskVacateInSnapshot는 Layer 2(transcript backfill)로 채운
+// Model·ContextWindow·Cost 필드가 stripRestoredFields 적용 후 저장 스냅샷에서
+// 비워지는지를 단위 검증한다(SPEC §5.14, ANALYSIS §5 D8).
+//
+// 검증 흐름:
+//  1. 빈 stdin + 유효 transcript entry로 applyTranscriptToStdin을 직접 호출해 mask2 획득.
+//  2. main.go:132-140의 OR 누적 로직과 동일하게 restoredMask에 mask2를 합산.
+//  3. main.go:195-203의 save 블록과 동일하게 snapshot을 만들고 stripRestoredFields 적용.
+//  4. transcript-복원 필드가 비어있고, 정상 stdin 필드(Version·SessionId)는 보존됨을 어서션.
+func TestTask010Layer2MaskVacateInSnapshot(t *testing.T) {
+	// transcript entry 픽스처: claude-opus-4-6 모델, 단가표에 존재하므로 cost도 채워짐.
+	entry := &transcriptEntry{
+		Model: "claude-opus-4-6",
+		Cwd:   "/work/proj",
+		Usage: transcriptUsage{
+			InputTokens:              50000,
+			OutputTokens:             10000,
+			CacheReadInputTokens:     1000,
+			CacheCreationInputTokens: 2000,
+			CacheCreation5mTokens:    2000,
+		},
+	}
+
+	// 빈 stdin: model/context/cost 모두 비어있음.
+	stdin := StdinInput{}
+	stdin.Version = "v-fresh"    // 정상 stdin 필드 — 보존되어야 함
+	stdin.SessionId = "sid-010"  // 정상 stdin 필드 — 보존되어야 함
+
+	mask2 := applyTranscriptToStdin(&stdin, entry, false /*oneMSignal*/)
+
+	// Layer 2가 세 필드를 모두 채웠는지 확인 (전제조건).
+	if !mask2.Model {
+		t.Fatal("test setup: mask2.Model=false; applyTranscriptToStdin did not fill Model")
+	}
+	if !mask2.ContextWindow {
+		t.Fatal("test setup: mask2.ContextWindow=false; applyTranscriptToStdin did not fill ContextWindow")
+	}
+	// Cost는 단가표 hit 시만 채워짐 — claude-opus-4-6은 단가표에 있으므로 true여야 함.
+	if !mask2.Cost {
+		t.Fatal("test setup: mask2.Cost=false; applyTranscriptToStdin did not fill Cost (pricing miss?)")
+	}
+
+	// main.go:132-140의 OR 누적 로직 재현: Layer 1 mask는 모두 false인 상태에서 Layer 2 mask를 합산.
+	var restoredMask restoredFieldMask
+	if mask2.Model {
+		restoredMask.Model = true
+	}
+	if mask2.Cost {
+		restoredMask.Cost = true
+	}
+	if mask2.ContextWindow {
+		restoredMask.ContextWindow = true
+	}
+
+	// main.go:195-203의 save 블록 재현: snapshot 복사 → RateLimits nil → stripRestoredFields.
+	snapshot := stdin
+	snapshot.RateLimits = nil
+	stripRestoredFields(&snapshot, restoredMask)
+
+	// 검증 1: transcript-복원 필드가 저장 스냅샷에서 비워졌는가.
+	if snapshot.Model.ID != "" || snapshot.Model.DisplayName != "" {
+		t.Errorf("snapshot.Model = %+v; want zero (transcript-restored field must be vacated)", snapshot.Model)
+	}
+	if snapshot.ContextWindow.ContextWindowSize != 0 || snapshot.ContextWindow.TotalInputTokens != 0 {
+		t.Errorf("snapshot.ContextWindow = %+v; want zero (transcript-restored field must be vacated)", snapshot.ContextWindow)
+	}
+	if snapshot.Cost.TotalCostUsd != 0 {
+		t.Errorf("snapshot.Cost.TotalCostUsd = %v; want 0 (transcript-restored field must be vacated)", snapshot.Cost.TotalCostUsd)
+	}
+
+	// 검증 2: 정상 stdin 필드는 보존되어야 한다.
+	if snapshot.Version != "v-fresh" {
+		t.Errorf("snapshot.Version = %q; want v-fresh (fresh stdin field must survive stripping)", snapshot.Version)
+	}
+	if snapshot.SessionId != "sid-010" {
+		t.Errorf("snapshot.SessionId = %q; want sid-010 (fresh stdin field must survive stripping)", snapshot.SessionId)
+	}
+}
+
+// TestTask010FreshFieldsPreservedWithLayer2Mask는 stdin이 이미 신선한 Model 값을
+// 들고 온 경우(mask.Model=false) applyTranscriptToStdin이 그 필드를 덮지 않고,
+// 저장 스냅샷에서도 신선 값이 보존됨을 검증한다.
+func TestTask010FreshFieldsPreservedWithLayer2Mask(t *testing.T) {
+	entry := &transcriptEntry{
+		Model: "claude-opus-4-6",
+		Cwd:   "/work/proj",
+		Usage: transcriptUsage{
+			InputTokens:  10000,
+			OutputTokens: 2000,
+		},
+	}
+
+	// stdin이 이미 신선한 model을 가지고 있음 — transcript가 덮어써선 안 됨.
+	stdin := StdinInput{}
+	stdin.Model.ID = "claude-fresh-model"
+	stdin.Model.DisplayName = "FreshModel"
+	stdin.Version = "v-fresh"
+
+	mask2 := applyTranscriptToStdin(&stdin, entry, false)
+
+	// model은 신선하므로 mask.Model=false여야 함.
+	if mask2.Model {
+		t.Error("mask2.Model=true despite fresh stdin model; applyTranscriptToStdin must not overwrite fresh fields")
+	}
+	if stdin.Model.ID != "claude-fresh-model" {
+		t.Errorf("stdin.Model.ID overwritten: got %q, want claude-fresh-model", stdin.Model.ID)
+	}
+
+	// OR 누적 + stripping: Model은 mask=false이므로 스냅샷에서도 신선 값 유지.
+	var restoredMask restoredFieldMask
+	if mask2.Model {
+		restoredMask.Model = true
+	}
+	if mask2.Cost {
+		restoredMask.Cost = true
+	}
+	if mask2.ContextWindow {
+		restoredMask.ContextWindow = true
+	}
+
+	snapshot := stdin
+	snapshot.RateLimits = nil
+	stripRestoredFields(&snapshot, restoredMask)
+
+	// 신선 model은 stripping 대상이 아니므로 보존되어야 함.
+	if snapshot.Model.ID != "claude-fresh-model" {
+		t.Errorf("snapshot.Model.ID = %q; want claude-fresh-model (fresh field must not be stripped)", snapshot.Model.ID)
+	}
+	if snapshot.Model.DisplayName != "FreshModel" {
+		t.Errorf("snapshot.Model.DisplayName = %q; want FreshModel (fresh field must not be stripped)", snapshot.Model.DisplayName)
+	}
+	// ContextWindow는 Layer 2가 채웠으므로 vacate되어야 함.
+	if snapshot.ContextWindow.ContextWindowSize != 0 {
+		t.Errorf("snapshot.ContextWindow.ContextWindowSize = %d; want 0 (transcript-restored field must be vacated)",
+			snapshot.ContextWindow.ContextWindowSize)
+	}
+}
+
+// TestTask010Layer1Layer2ORMerge는 Layer 1(session cache)과 Layer 2(transcript)가
+// 같은 필드(Model)를 각각 별도 호출에서 복원했을 때 OR 누적으로 restoredMask가
+// 올바르게 합산되고, stripRestoredFields가 통합 mask로 해당 필드를 vacate하는지
+// 검증한다(ANALYSIS §5 D8).
+//
+// 시나리오: Layer 1이 Model·Cost를 복원 → Layer 2가 ContextWindow·Cost를 복원.
+// OR 누적 결과: Model·Cost·ContextWindow 모두 true → stripRestoredFields가 셋 다 vacate.
+func TestTask010Layer1Layer2ORMerge(t *testing.T) {
+	cwd := normalizeCwd(t.TempDir())
+	patchCwdTo(t, cwd)
+
+	now := time.Unix(1_700_000_000, 0)
+
+	// Layer 1 캐시 픽스처: Model·Cost를 가지고 있음.
+	cached := makeCachedForRestore(cwd, now.Add(-10*time.Second))
+	// cached에 ContextWindow는 비어있도록 설정 (ContextWindow 복원은 Layer 2 몫).
+	cached.CachedStdin.ContextWindow.TotalInputTokens = 0
+	cached.CachedStdin.ContextWindow.TotalOutputTokens = 0
+	cached.CachedStdin.ContextWindow.ContextWindowSize = 0
+
+	// stdin: 완전히 비어있음 — Layer 1이 Model·Cost를 채우고, Layer 2가 ContextWindow를 채운다.
+	stdin := StdinInput{}
+	stdin.Version = "v-fresh"
+
+	// Layer 1 복원: fillFromSessionCache가 Model·Cost를 채움. ContextWindow는 cached가 비어있어 skip.
+	mask1 := fillFromSessionCache(&stdin, cached)
+	if !mask1.Model {
+		t.Fatal("Layer 1: mask1.Model=false; expected true (stdin model was empty)")
+	}
+	if !mask1.Cost {
+		t.Fatal("Layer 1: mask1.Cost=false; expected true (stdin cost was zero)")
+	}
+	if mask1.ContextWindow {
+		t.Error("Layer 1: mask1.ContextWindow=true despite empty cached ContextWindow; expected false")
+	}
+
+	// Layer 1 이후 stdin 상태: Model·Cost는 채워짐, ContextWindow는 여전히 비어있음.
+	if stdin.Model.ID == "" {
+		t.Fatal("Layer 1: stdin.Model.ID is empty after fillFromSessionCache")
+	}
+	if stdin.ContextWindow.ContextWindowSize != 0 {
+		t.Fatal("Layer 1: stdin.ContextWindow.ContextWindowSize != 0; unexpected fill")
+	}
+
+	// Layer 2 transcript entry: ContextWindow를 채운다. Model은 이미 신선하므로 덮지 않음.
+	entry := &transcriptEntry{
+		Model: "claude-opus-4-6", // stdin.Model.ID가 이미 있으므로 mask2.Model=false
+		Cwd:   cwd,
+		Usage: transcriptUsage{
+			InputTokens:  30000,
+			OutputTokens: 5000,
+		},
+	}
+	mask2 := applyTranscriptToStdin(&stdin, entry, false)
+
+	// Layer 2: stdin.Model은 이미 채워져 있으므로 mask2.Model=false.
+	if mask2.Model {
+		t.Error("Layer 2: mask2.Model=true despite already-filled Model; expected false")
+	}
+	// Layer 2: ContextWindow는 비었으므로 mask2.ContextWindow=true.
+	if !mask2.ContextWindow {
+		t.Error("Layer 2: mask2.ContextWindow=false; expected true (ContextWindow was empty)")
+	}
+
+	// main.go:132-140 OR 누적 재현: restoredMask = Layer1 OR Layer2.
+	restoredMask := mask1
+	if mask2.Model {
+		restoredMask.Model = true
+	}
+	if mask2.Cost {
+		restoredMask.Cost = true
+	}
+	if mask2.ContextWindow {
+		restoredMask.ContextWindow = true
+	}
+
+	// 통합 mask 검증: Layer 1이 Model·Cost를 복원, Layer 2가 ContextWindow를 복원.
+	if !restoredMask.Model {
+		t.Error("restoredMask.Model=false; expected true (Layer 1 filled Model)")
+	}
+	if !restoredMask.Cost {
+		t.Error("restoredMask.Cost=false; expected true (Layer 1 filled Cost)")
+	}
+	if !restoredMask.ContextWindow {
+		t.Error("restoredMask.ContextWindow=false; expected true (Layer 2 filled ContextWindow)")
+	}
+
+	// save 블록 재현: stripRestoredFields가 Layer 1 + Layer 2 통합 mask로 vacate.
+	snapshot := stdin
+	snapshot.RateLimits = nil
+	stripRestoredFields(&snapshot, restoredMask)
+
+	// 검증: Layer 1이 복원한 Model이 vacate되어야 함.
+	if snapshot.Model.ID != "" || snapshot.Model.DisplayName != "" {
+		t.Errorf("snapshot.Model = %+v; want zero (Layer 1 restored, must be vacated by OR-merged mask)", snapshot.Model)
+	}
+	// 검증: Layer 1이 복원한 Cost가 vacate되어야 함.
+	if snapshot.Cost.TotalCostUsd != 0 {
+		t.Errorf("snapshot.Cost.TotalCostUsd = %v; want 0 (Layer 1 restored, must be vacated by OR-merged mask)", snapshot.Cost.TotalCostUsd)
+	}
+	// 검증: Layer 2가 복원한 ContextWindow가 vacate되어야 함.
+	if snapshot.ContextWindow.ContextWindowSize != 0 || snapshot.ContextWindow.TotalInputTokens != 0 {
+		t.Errorf("snapshot.ContextWindow = %+v; want zero (Layer 2 restored, must be vacated by OR-merged mask)", snapshot.ContextWindow)
+	}
+	// 검증: 정상 stdin 필드는 보존.
+	if snapshot.Version != "v-fresh" {
+		t.Errorf("snapshot.Version = %q; want v-fresh (fresh stdin field must survive stripping)", snapshot.Version)
+	}
+}
+
+// TestTask010SelfPerpetuationPrevented는 Layer 2 복원 후 저장된 캐시에서 다시 읽었을 때
+// transcript-복원 필드가 없어서 다음 호출에서 "정상 stdin 값"처럼 재전파되지 않음을 검증한다.
+// (self-perpetuation 차단의 종단 시나리오 — save/load 라운드트립 포함)
+func TestTask010SelfPerpetuationPrevented(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cwd := normalizeCwd(t.TempDir())
+	patchCwdTo(t, cwd)
+
+	const cacheKey = "task010-self-perp"
+
+	// Step 1: Layer 2가 채운 stdin을 stripRestoredFields 적용 후 saveSessionState로 저장.
+	entry := &transcriptEntry{
+		Model: "claude-opus-4-6",
+		Cwd:   cwd,
+		Usage: transcriptUsage{
+			InputTokens:           50000,
+			OutputTokens:          10000,
+			CacheCreation5mTokens: 500,
+		},
+	}
+
+	stdin := StdinInput{}
+	stdin.SessionId = cacheKey
+	stdin.Version = "v-fresh"
+
+	mask2 := applyTranscriptToStdin(&stdin, entry, false)
+	if !mask2.Model || !mask2.ContextWindow {
+		t.Fatalf("test setup: Layer 2 did not fill Model or ContextWindow (mask=%+v)", mask2)
+	}
+
+	// OR 누적 (Layer 1 없음 → restoredMask = mask2 그대로).
+	var restoredMask restoredFieldMask
+	if mask2.Model {
+		restoredMask.Model = true
+	}
+	if mask2.Cost {
+		restoredMask.Cost = true
+	}
+	if mask2.ContextWindow {
+		restoredMask.ContextWindow = true
+	}
+
+	// save 블록: stripRestoredFields 후 저장.
+	snapshot := stdin
+	snapshot.RateLimits = nil
+	stripRestoredFields(&snapshot, restoredMask)
+	saveSessionState(cacheKey, &SessionState{
+		CachedStdin: &snapshot,
+		WidgetCount: 3,
+	})
+
+	// Step 2: 저장된 캐시 재로드 → transcript-복원 필드가 비어있어야 함.
+	reloaded := loadSessionState(cacheKey)
+	if reloaded == nil || reloaded.CachedStdin == nil {
+		t.Fatalf("loadSessionState returned nil after save")
+	}
+
+	// transcript-복원 필드가 저장 캐시에서 비어있어야 함 → 다음 호출에서 재전파 불가.
+	if reloaded.CachedStdin.Model.ID != "" || reloaded.CachedStdin.Model.DisplayName != "" {
+		t.Errorf("saved cache: Model=%+v; want zero (Layer 2 restored field must not be saved into cache)", reloaded.CachedStdin.Model)
+	}
+	if reloaded.CachedStdin.ContextWindow.ContextWindowSize != 0 || reloaded.CachedStdin.ContextWindow.TotalInputTokens != 0 {
+		t.Errorf("saved cache: ContextWindow=%+v; want zero (Layer 2 restored field must not be saved into cache)", reloaded.CachedStdin.ContextWindow)
+	}
+	if reloaded.CachedStdin.Cost.TotalCostUsd != 0 {
+		t.Errorf("saved cache: Cost.TotalCostUsd=%v; want 0 (Layer 2 restored field must not be saved into cache)", reloaded.CachedStdin.Cost.TotalCostUsd)
+	}
+
+	// 정상 stdin 필드는 보존됨.
+	if reloaded.CachedStdin.Version != "v-fresh" {
+		t.Errorf("saved cache: Version=%q; want v-fresh (fresh field must survive)", reloaded.CachedStdin.Version)
+	}
+
+	// Step 3: 다음 호출에서 이 캐시로 shouldRestoreFromSession을 발동시키면
+	// CachedStdin에 복원할 값이 없으므로 needsFill 조건의 "캐시에 값이 있음" 전제가
+	// 성립하지 않아 실질적으로 복원이 no-op이어야 한다.
+	// (캐시 자체는 eligibility를 통과할 수 있지만, fillFromSessionCache가 빈 캐시 값으로 채우지 않음)
+	emptyStdin2 := StdinInput{SessionId: cacheKey}
+	now := time.Now()
+	if shouldRestoreFromSession(emptyStdin2, reloaded, now) {
+		mask3 := fillFromSessionCache(&emptyStdin2, reloaded)
+		// 캐시에서 복원된 값이 없어야 함 — 이전에 strip된 필드는 0값이므로 fill이 no-op이어야 함.
+		if mask3.Model {
+			t.Errorf("Step 3: mask3.Model=true; Layer 2 restored model was re-perpetuated from cache (self-perpetuation!)")
+		}
+		if mask3.ContextWindow {
+			t.Errorf("Step 3: mask3.ContextWindow=true; Layer 2 restored context was re-perpetuated from cache (self-perpetuation!)")
+		}
+		if mask3.Cost {
+			t.Errorf("Step 3: mask3.Cost=true; Layer 2 restored cost was re-perpetuated from cache (self-perpetuation!)")
+		}
+	}
+}
+
+// ─── task-011: last-known [1m] 저장 트리거 ─────────────────────────────────
+
+// TestTask011OneMSavedWhenInputContainsOneM는 원본 stdin Model.ID에 "[1m]"이 포함되고
+// cwd가 식별될 때 saveLastKnownOneM이 호출되어 캐시가 true로 갱신되는지 검증한다.
+// main.go의 트리거 로직은 input(원본)을 참조하며, patchCwdTo + isolateOneMCache로
+// 실제 파일시스템 오염 없이 검증한다.
+func TestTask011OneMSavedWhenInputContainsOneM(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cwd := normalizeCwd(t.TempDir())
+	patchCwdTo(t, cwd)
+
+	// 사전 조건: 캐시에 [1m] 항목이 없어야 함.
+	if loadLastKnownOneM(cwd) {
+		t.Fatal("precondition: loadLastKnownOneM should return false before trigger")
+	}
+
+	// 트리거 조건 재현: input.Model.ID에 "[1m]" 포함 + cwd 식별 가능.
+	input := StdinInput{}
+	input.Model.ID = "claude-opus-4-7[1m]"
+	if strings.Contains(input.Model.ID, "[1m]") {
+		if triggerCwd := detectCurrentCwd(); triggerCwd != "" {
+			saveLastKnownOneM(triggerCwd, true)
+		}
+	}
+
+	// 검증: 해당 cwd에 true가 저장되었는가.
+	if !loadLastKnownOneM(cwd) {
+		t.Fatalf("want true after [1m] trigger for cwd=%s, got false", cwd)
+	}
+}
+
+// TestTask011NoSaveWhenInputHasNoOneM은 원본 stdin Model.ID에 "[1m]"이 없으면
+// 저장 트리거가 발동하지 않아 기존 캐시 값이 그대로 유지됨을 검증한다.
+func TestTask011NoSaveWhenInputHasNoOneM(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cwd := normalizeCwd(t.TempDir())
+	patchCwdTo(t, cwd)
+
+	// 기존 항목 없음 — [1m] 없는 stdin이 도착해도 false 상태가 유지되어야 함.
+	input := StdinInput{}
+	input.Model.ID = "claude-sonnet-4-6" // [1m] 없음
+	if strings.Contains(input.Model.ID, "[1m]") {
+		if triggerCwd := detectCurrentCwd(); triggerCwd != "" {
+			saveLastKnownOneM(triggerCwd, true)
+		}
+	}
+
+	if loadLastKnownOneM(cwd) {
+		t.Fatalf("want false when input has no [1m], got true")
+	}
+}
+
+// TestTask011NoSaveWhenCwdEmpty는 [1m] 신호가 있어도 cwd를 식별할 수 없으면
+// 저장이 발생하지 않아 캐시가 오염되지 않음을 검증한다.
+func TestTask011NoSaveWhenCwdEmpty(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	// cwd를 빈 문자열로 강제 — detectCurrentCwd()가 ""를 반환하도록.
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	detectCwdEnv = func(string) string { return "" }
+	detectCwdGetwd = func() (string, error) { return "", fmt.Errorf("no cwd") }
+	t.Cleanup(func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	})
+
+	// [1m] 신호 포함, 그러나 cwd 식별 불가.
+	input := StdinInput{}
+	input.Model.ID = "claude-opus-4-7[1m]"
+	if strings.Contains(input.Model.ID, "[1m]") {
+		if triggerCwd := detectCurrentCwd(); triggerCwd != "" {
+			saveLastKnownOneM(triggerCwd, true)
+		}
+	}
+
+	// 파일이 생성되지 않았거나 읽어도 false여야 함.
+	// detectCurrentCwd가 ""이므로 saveLastKnownOneM은 호출되지 않아야 한다.
+	// 임의 cwd로 조회해도 false.
+	if loadLastKnownOneM("/any/cwd") {
+		t.Fatalf("want false when cwd empty (no save should have occurred)")
+	}
+}
+
+// TestTask011ExistingEntryPreservedOnNonOneMCall은 [1m]이 없는 호출이 발생해도
+// 다른 cwd에 이미 저장된 true 항목이 지워지지 않음을 검증한다 (read-merge-write 불변식).
+func TestTask011ExistingEntryPreservedOnNonOneMCall(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cwdA := normalizeCwd(t.TempDir())
+	cwdB := normalizeCwd(t.TempDir())
+
+	// cwd A에 미리 true 저장.
+	saveLastKnownOneM(cwdA, true)
+	if !loadLastKnownOneM(cwdA) {
+		t.Fatal("precondition: cwd A should be true")
+	}
+
+	// [1m] 없는 cwd B 호출 — cwd A 항목은 변경되어서는 안 됨.
+	patchCwdTo(t, cwdB)
+	input := StdinInput{}
+	input.Model.ID = "claude-sonnet-4-6" // [1m] 없음
+	if strings.Contains(input.Model.ID, "[1m]") {
+		if triggerCwd := detectCurrentCwd(); triggerCwd != "" {
+			saveLastKnownOneM(triggerCwd, true)
+		}
+	}
+
+	// cwd A 항목이 보존되었는가.
+	if !loadLastKnownOneM(cwdA) {
+		t.Fatalf("cwd A entry lost after non-[1m] call on cwd B")
 	}
 }

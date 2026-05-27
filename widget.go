@@ -75,11 +75,12 @@ func detectLanguage() string {
 
 // Context holds all data needed by widgets.
 type Context struct {
-	Stdin        StdinInput
-	Config       Config
-	ConfigDir    string
-	Translations *Translations
-	RateLimits   *UsageLimits
+	Stdin          StdinInput
+	Config         Config
+	ConfigDir      string
+	Translations   *Translations
+	RateLimits     *UsageLimits
+	CostEstimated  bool // true when cost is derived from transcript (not direct stdin)
 }
 
 // Widget is the interface all widgets must implement.
