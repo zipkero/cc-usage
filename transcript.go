@@ -236,9 +236,14 @@ func selectTranscriptCandidate(dir string) (string, error) {
 	return filepath.Join(dir, candidates[0].name), nil
 }
 
-// encodeCwdToTranscriptDir는 cwd 문자열을 ~/.claude/projects/<encoded> 형태의
+// encodeCwdToTranscriptDir는 cwd 문자열을 <config-root>/projects/<encoded> 형태의
 // 전체 경로로 변환한다. '/', '\', ':', '.' 네 구분자를 모두 '-'로 치환하는
 // forward-only 함수이며 디코딩 경로는 두지 않는다.
+//
+// config-root는 Claude Code의 config 디렉토리다. Claude Code는 CLAUDE_CONFIG_DIR
+// 환경변수로 이 위치를 옮길 수 있고(예: ~/.claude-triptopaz), transcript도 그쪽
+// projects/ 아래에 쓴다. 따라서 CLAUDE_CONFIG_DIR이 설정돼 있으면 그 값을, 없으면
+// <home>/.claude를 root로 쓴다. env 미설정 시에만 home 인자가 쓰인다.
 func encodeCwdToTranscriptDir(home, cwd string) string {
 	replacer := strings.NewReplacer(
 		"/", "-",
@@ -247,6 +252,9 @@ func encodeCwdToTranscriptDir(home, cwd string) string {
 		".", "-",
 	)
 	encoded := replacer.Replace(cwd)
+	if cfg := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR")); cfg != "" {
+		return filepath.Join(cfg, "projects", encoded)
+	}
 	return filepath.Join(home, ".claude", "projects", encoded)
 }
 

@@ -471,11 +471,37 @@ func TestEncodeCwdToTranscriptDir(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			// CLAUDE_CONFIG_DIR 미설정 시 home/.claude/projects fallback을 검증.
+			// 실제 셸에 env가 있을 수 있으므로 명시적으로 비운다.
+			t.Setenv("CLAUDE_CONFIG_DIR", "")
 			got := encodeCwdToTranscriptDir(tc.home, tc.cwd)
 			wantPath := filepath.Join(tc.home, ".claude", "projects", tc.wantSuf)
 			if got != wantPath {
 				t.Errorf("encodeCwdToTranscriptDir(%q, %q)\n  got  %q\n  want %q", tc.home, tc.cwd, got, wantPath)
 			}
 		})
+	}
+}
+
+// TestEncodeCwdToTranscriptDir_ConfigDirOverride는 CLAUDE_CONFIG_DIR이 설정된
+// 환경(예: ~/.claude-triptopaz)에서 transcript root가 home/.claude가 아니라
+// 그 config 디렉토리의 projects/를 가리키는지 검증한다. 이 env를 무시하면
+// config 홈을 옮긴 사용자의 워크스페이스 transcript를 전부 놓친다(v0.3.11 회귀).
+func TestEncodeCwdToTranscriptDir_ConfigDirOverride(t *testing.T) {
+	cfg := filepath.Join(`C:\Users\zipke`, ".claude-triptopaz")
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+
+	got := encodeCwdToTranscriptDir(`C:\Users\zipke`, `C:\Users\zipke\GolandProjects\datadog-analyzer`)
+	want := filepath.Join(cfg, "projects", "C--Users-zipke-GolandProjects-datadog-analyzer")
+	if got != want {
+		t.Errorf("CLAUDE_CONFIG_DIR override\n  got  %q\n  want %q", got, want)
+	}
+
+	// 공백만 있는 env는 미설정으로 취급 → home fallback.
+	t.Setenv("CLAUDE_CONFIG_DIR", "   ")
+	gotFallback := encodeCwdToTranscriptDir(`C:\Users\zipke`, `C:\foo`)
+	wantFallback := filepath.Join(`C:\Users\zipke`, ".claude", "projects", "C--foo")
+	if gotFallback != wantFallback {
+		t.Errorf("blank CLAUDE_CONFIG_DIR should fall back to home\n  got  %q\n  want %q", gotFallback, wantFallback)
 	}
 }

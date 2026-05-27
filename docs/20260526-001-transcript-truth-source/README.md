@@ -19,3 +19,4 @@ Claude Code의 transcript 파일을 cc-usage status line의 진실 소스로 받
 - 2026-05-27: 인코딩 규칙 정정 — `/`·`.`만 → `/`,`\`,`:`,`.` 네 구분자 치환(Windows backslash·드라이브 콜론 포함). SPEC §3 + analysis 실측/인터페이스 전파
 - 2026-05-27: IMPLEMENT 체크리스트 작성
 - 2026-05-27: task-001~015 구현·verify 완료 (전 Task approved, v0.3.11 bump)
+- 2026-05-27: v0.3.11 회귀 수정 — transcript root에 CLAUDE_CONFIG_DIR 반영(task-016, v0.3.12). `.claude` 고정으로 config 홈 이동 환경(.claude-triptopaz)의 워크스페이스 transcript를 놓쳐 rate-limit only로 떨어지던 문제 해결

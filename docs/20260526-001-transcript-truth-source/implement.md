@@ -125,6 +125,14 @@
   - 참조: SPEC §5.13, SPEC §5.5, SPEC §5.6, SPEC §5.7
 
 - [x] task-015: SemVer bump v0.3.10 → v0.3.11
+
+- [x] task-016: transcript root에 CLAUDE_CONFIG_DIR 반영 (v0.3.11 회귀 수정)
+  - 목적: config 홈을 옮긴 환경(CLAUDE_CONFIG_DIR)에서도 워크스페이스 transcript를 찾아 Layer 2가 발동한다 — `~/.claude` 고정으로 datadog-analyzer 등이 rate-limit only로 떨어지던 회귀 제거
+  - 접근: `encodeCwdToTranscriptDir`이 root 결정 시 `CLAUDE_CONFIG_DIR`(공백 trim 후 비어있지 않으면) 우선, 없으면 `<home>/.claude`. SemVer v0.3.11→v0.3.12
+  - 검증 조건:
+    - 결과: CLAUDE_CONFIG_DIR 설정 시 `<cfg>/projects/<encoded>`, 미설정/공백 시 `<home>/.claude/projects/<encoded>`. 실제 바이너리 smoke에서 datadog-analyzer cwd가 full 복원
+    - 확인: 단위 테스트(override/blank/fallback) + datadog-analyzer cwd DEBUG smoke로 Layer 2 발동 확인
+  - 참조: SPEC §5.1, SPEC §5.7, SPEC §5.15
   - 목적: `/plugin` UI가 update를 감지하도록 버전이 세 곳에서 동일하게 갱신되고 바이너리가 새 버전을 출력한다
   - 접근: `Makefile` VERSION, `.claude-plugin/plugin.json` version, `api.go` userAgent 세 곳을 v0.3.11로 동시 갱신
   - 검증 조건:
