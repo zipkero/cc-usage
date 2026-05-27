@@ -300,8 +300,13 @@ func applyTranscriptToStdin(stdin *StdinInput, entry *transcriptEntry, oneMSigna
 		} else {
 			stdin.ContextWindow.ContextWindowSize = twoHundredK
 		}
-		// usage 토큰 매핑: transcript usage → stdin.ContextWindow
-		stdin.ContextWindow.TotalInputTokens = entry.Usage.InputTokens
+		// usage 토큰 매핑: transcript usage → stdin.ContextWindow.
+		// Claude Code 규약과 동일하게 TotalInputTokens에 cache_read·cache_creation을
+		// 합산한다. transcript의 마지막 assistant entry는 input_tokens에 증분(비캐시)
+		// 입력만 담고 컨텍스트의 대부분은 cache_read에 들어있어, 합산하지 않으면
+		// 컨텍스트 위젯이 수백 토큰·0%로 표시된다.
+		stdin.ContextWindow.TotalInputTokens = entry.Usage.InputTokens +
+			entry.Usage.CacheReadInputTokens + entry.Usage.CacheCreationInputTokens
 		stdin.ContextWindow.TotalOutputTokens = entry.Usage.OutputTokens
 		stdin.ContextWindow.CurrentUsage.InputTokens = entry.Usage.InputTokens
 		stdin.ContextWindow.CurrentUsage.OutputTokens = entry.Usage.OutputTokens
