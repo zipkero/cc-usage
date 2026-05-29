@@ -2682,3 +2682,34 @@ func TestTask011ExistingEntryPreservedOnNonOneMCall(t *testing.T) {
 		t.Fatalf("cwd A entry lost after non-[1m] call on cwd B")
 	}
 }
+
+// configHomeDir은 CLAUDE_CONFIG_DIR로 config 홈을 옮긴 환경(예: ~/.claude-triptopaz)에서
+// 그 디렉토리를, env 미설정·공백 시에는 <home>/.claude를 반환해야 한다. transcript root와
+// 동일한 정책으로, 이래야 --config 없이도 credential을 올바른 계정에서 읽는다.
+func TestConfigHomeDir(t *testing.T) {
+	const home = `C:\Users\zipke`
+
+	t.Run("CLAUDE_CONFIG_DIR set wins over home/.claude", func(t *testing.T) {
+		cfg := filepath.Join(home, ".claude-triptopaz")
+		t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+		if got := configHomeDir(home); got != cfg {
+			t.Errorf("configHomeDir = %q, want %q", got, cfg)
+		}
+	})
+
+	t.Run("unset falls back to home/.claude", func(t *testing.T) {
+		t.Setenv("CLAUDE_CONFIG_DIR", "")
+		want := filepath.Join(home, ".claude")
+		if got := configHomeDir(home); got != want {
+			t.Errorf("configHomeDir = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("whitespace-only treated as unset", func(t *testing.T) {
+		t.Setenv("CLAUDE_CONFIG_DIR", "   ")
+		want := filepath.Join(home, ".claude")
+		if got := configHomeDir(home); got != want {
+			t.Errorf("configHomeDir = %q, want %q", got, want)
+		}
+	})
+}

@@ -21,13 +21,25 @@ func debugLog(context string, format string, args ...any) {
 	}
 }
 
-// defaultConfigPath returns ~/.claude/cc-usage.json.
+// configHomeDir returns Claude Code's config directory. Claude Code relocates
+// it via CLAUDE_CONFIG_DIR (e.g. ~/.claude-triptopaz), and .credentials.json
+// lives under that same root — so the credential lookup must follow it too,
+// matching transcript.go's root resolution. Returns CLAUDE_CONFIG_DIR when set
+// (whitespace-only treated as unset), otherwise <home>/.claude.
+func configHomeDir(home string) string {
+	if cfg := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR")); cfg != "" {
+		return cfg
+	}
+	return filepath.Join(home, ".claude")
+}
+
+// defaultConfigPath returns {CLAUDE_CONFIG_DIR or ~/.claude}/cc-usage.json.
 func defaultConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".claude", "cc-usage.json")
+	return filepath.Join(configHomeDir(home), "cc-usage.json")
 }
 
 func main() {
@@ -46,7 +58,7 @@ func main() {
 		configDir = filepath.Dir(*configPath)
 	} else {
 		home, _ := os.UserHomeDir()
-		configDir = filepath.Join(home, ".claude")
+		configDir = configHomeDir(home)
 	}
 
 	debugLog("main", "configPath=%s configDir=%s", *configPath, configDir)

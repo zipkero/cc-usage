@@ -16,7 +16,7 @@ stdin (Claude Code JSON) → cc-usage → stdout (ANSI 컬러 텍스트)
 main.go            : 진입점 — config 로드 → stdin 파싱 → credential/API → orchestrate
                      → degraded-input 복원 → 출력 → 세션 캐시 저장
 stdin.go           : Claude Code status line 프로토콜 JSON → StdinInput
-config.go          : ~/.claude/cc-usage.json → Config (기본값 머지)
+config.go          : {CLAUDE_CONFIG_DIR or ~/.claude}/cc-usage.json → Config (기본값 머지)
 widget.go          : Widget 인터페이스 + registry + displayPresets + presetCharToWidget
                      + orchestrate(): 라인별로 GetData/Render 후 separator 조인
 widgets_core.go    : model, context, cost, rateLimit{5h,7d,7dSonnet} 위젯
@@ -116,8 +116,8 @@ DEBUG=cc-usage ./dist/cc-usage <<< '{...}'   # 또는 DEBUG=1
 
 | 용도 | 경로 | 비고 |
 |------|------|------|
-| 설정 | `--config <path>` 또는 `~/.claude/cc-usage.json` | |
-| 인증 | `{configDir}/.credentials.json` | configDir = config 파일의 dirname |
+| 설정 | `--config <path>` 또는 `{CLAUDE_CONFIG_DIR or ~/.claude}/cc-usage.json` | env 미설정 시 `~/.claude` |
+| 인증 | `{configDir}/.credentials.json` | configDir = `--config` dirname, 없으면 `CLAUDE_CONFIG_DIR or ~/.claude` |
 | API 캐시 | `~/.cache/cc-usage/cache-<tokenHash>.json` | configDir 무관 (전역) |
 | 세션 캐시 | `~/.cache/cc-usage/session-state-<key>.json` | configDir 무관 (전역) |
 
