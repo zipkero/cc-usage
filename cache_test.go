@@ -480,6 +480,36 @@ func TestNormalizeCwd(t *testing.T) {
 	})
 }
 
+// cwdWithinRoot는 degrade-restore 가드의 핵심 술어다. 동일·조상(하위 디렉토리)은
+// 허용하고, 형제·외부·접두 혼동 경로는 차단해야 한다 (v0.3.15: 세션이 루트 아래로
+// cd한 정상 케이스를 정확 일치 가드가 막던 회귀의 수정).
+func TestCwdWithinRoot(t *testing.T) {
+	sep := string(os.PathSeparator)
+	root := sep + filepath.Join("Users", "zipkero", "Projects", "bus-escape")
+	cases := []struct {
+		name     string
+		recorded string
+		root     string
+		want     bool
+	}{
+		{"equal", root, root, true},
+		{"descendant one level", filepath.Join(root, "web"), root, true},
+		{"descendant deep (node_modules)", filepath.Join(root, "web", "node_modules", "@apps-in-toss"), root, true},
+		{"sibling project blocked", sep + filepath.Join("Users", "zipkero", "Projects", "other"), root, false},
+		{"prefix confusion blocked", root + "-extra", root, false},
+		{"ancestor of root blocked", sep + filepath.Join("Users", "zipkero", "Projects"), root, false},
+		{"empty recorded", "", root, false},
+		{"empty root", root, "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cwdWithinRoot(tc.recorded, tc.root); got != tc.want {
+				t.Fatalf("cwdWithinRoot(%q, %q) = %v, want %v", tc.recorded, tc.root, got, tc.want)
+			}
+		})
+	}
+}
+
 // task-002: detectCurrentCwd가 세 분기 — env hit, env miss + getwd hit,
 // 둘 다 실패 — 에서 spec(SPEC §5.2/§5.3, ANALYSIS §12 D1)대로 동작하는지 검증.
 // 패키지 변수 detectCwdEnv·detectCwdGetwd를 일시 swap하는 방식으로 격리.

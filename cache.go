@@ -137,6 +137,24 @@ func normalizeCwd(raw string) string {
 	return filepath.Clean(raw)
 }
 
+// cwdWithinRoot reports whether recorded is the same path as root, or a
+// descendant of it. The degrade-restore guards compare a recorded cwd (a cached
+// workspace.current_dir or a transcript entry's cwd) against the current cwd
+// signal, which detectCurrentCwd derives from CLAUDE_PROJECT_DIR — Claude Code
+// pins that to the project root and does not move it when the session cd's into
+// a subdirectory. Exact equality therefore rejects a perfectly valid session
+// whose current_dir drifted below the root (e.g. into node_modules). Containment
+// accepts that case while still blocking sibling/foreign workspaces: the trailing
+// separator prevents prefix confusion ("/a/bus" must not match "/a/bus-escape").
+// Both arguments are expected to be normalizeCwd'd already.
+func cwdWithinRoot(recorded, root string) bool {
+	if recorded == "" || root == "" {
+		return false
+	}
+	return recorded == root ||
+		strings.HasPrefix(recorded, root+string(os.PathSeparator))
+}
+
 func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")

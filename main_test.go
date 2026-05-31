@@ -979,6 +979,28 @@ func TestTask003AtomicRestoreFlowABC(t *testing.T) {
 		}
 	})
 
+	t.Run("(d) cached cwd is descendant of current root -> restored (cd into subdir)", func(t *testing.T) {
+		// 세션이 루트 아래 하위 디렉토리로 cd한 케이스. detectCurrentCwd는
+		// CLAUDE_PROJECT_DIR 기반 루트를 돌려주고, 캐시된 current_dir는 그 하위를
+		// 가리킨다. 정확 일치만 허용하던 시절엔 차단됐으나 cwdWithinRoot 완화로
+		// 복원돼야 한다 (v0.3.15 회귀).
+		root := normalizeCwd(t.TempDir())
+		sub := filepath.Join(root, "web", "node_modules", "@apps-in-toss")
+		detectCwdEnv = func(string) string { return root }
+		detectCwdGetwd = func() (string, error) { return root, nil }
+
+		cached := buildCached(sub, now.Add(-10*time.Second))
+		stdin := StdinInput{} // 빈 stdin
+
+		if !shouldRestoreFromSession(stdin, cached, now) {
+			t.Fatal("(d) shouldRestoreFromSession=false when cached cwd is a descendant of current root; expected true")
+		}
+		mask := fillFromSessionCache(&stdin, cached)
+		if !mask.Workspace || stdin.Workspace.CurrentDir != sub {
+			t.Fatalf("(d) workspace not restored: mask.Workspace=%v current_dir=%q", mask.Workspace, stdin.Workspace.CurrentDir)
+		}
+	})
+
 	t.Run("(b) SavedAt > workspaceRestoreTTL -> no cache restoration", func(t *testing.T) {
 		cwd := normalizeCwd(t.TempDir())
 		detectCwdEnv = func(string) string { return "" }

@@ -150,7 +150,7 @@ func main() {
 				debugLog("transcript", "readLastAssistantEntry ok: model=%q entry.cwd=%q", entry.Model, entry.Cwd)
 				// D4 가드: entry.cwd × normalizeCwd 정확 일치 시에만 적용
 				entryCwdNorm := normalizeCwd(entry.Cwd)
-				if cwd != "" && entryCwdNorm == cwd {
+				if cwd != "" && cwdWithinRoot(entryCwdNorm, cwd) {
 					oneMSignal := loadLastKnownOneM(cwd)
 					mask2 := applyTranscriptToStdin(&ctx.Stdin, entry, oneMSignal)
 					// Layer 1·2 mask 통합 (D8): stripRestoredFields가 두 layer 모두 vacate
@@ -304,17 +304,20 @@ var fallbackByWorkspaceCwd = func(now time.Time) *SessionState {
 // ANALYSIS §5.2)다. 같은 session 안에서 cd로 다른 워크스페이스로 이동한 직후
 // 빈 workspace stdin이 도착하면 cached Workspace.CurrentDir는 직전 디렉토리(A)를
 // 가리키지만 사용자는 이미 B에 있다. 그대로 복원하면 화면에 A의 cwd/projectInfo가
-// 노출되므로, detectCurrentCwd로 얻은 현재 신호와 정규화 기준 정확 일치할 때만
-// true를 반환한다. 현재 cwd를 식별할 수 없으면(env/getwd 모두 실패) cross-workspace
-// 노출 위험을 피하기 위해 복원 자체를 skip. cost/context 등 비-워크스페이스 복원은
-// 이 가드의 영향을 받지 않는다.
+// 노출되므로, detectCurrentCwd로 얻은 현재 신호(루트)가 cached cwd의 조상이거나
+// 동일할 때만(cwdWithinRoot) true를 반환한다. detectCurrentCwd는 CLAUDE_PROJECT_DIR
+// 기반이라 세션이 하위 디렉토리로 cd해도 루트에 고정되므로, 정확 일치만 허용하면
+// current_dir이 루트 아래로 내려간 정상 세션까지 차단된다. 조상 허용으로 그 케이스를
+// 살리되 형제·외부 워크스페이스는 여전히 차단된다. 현재 cwd를 식별할 수 없으면
+// (env/getwd 모두 실패) cross-workspace 노출 위험을 피하기 위해 복원 자체를 skip.
+// cost/context 등 비-워크스페이스 복원은 이 가드의 영향을 받지 않는다.
 func shouldRestoreWorkspace(cachedCwd string) bool {
 	currentCwd := detectCurrentCwd()
 	if currentCwd == "" {
 		debugLog("fallback", "empty stdin -> workspace restore blocked: cached_cwd=%s current_cwd=<unknown>", cachedCwd)
 		return false
 	}
-	if normalizeCwd(cachedCwd) != currentCwd {
+	if !cwdWithinRoot(normalizeCwd(cachedCwd), currentCwd) {
 		debugLog("fallback", "empty stdin -> workspace restore blocked: cached_cwd=%s current_cwd=%s", cachedCwd, currentCwd)
 		return false
 	}
