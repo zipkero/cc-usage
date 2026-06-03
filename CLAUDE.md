@@ -49,6 +49,18 @@ locales/{en,ko}.json : i18n 문자열 (go:embed로 임베드)
 - 또한 `context_window.total_output_tokens`는 **세션 누적이 아니라 현재 턴 output**이다
   (`current_usage.output_tokens`와 항상 일치). 누적 output token 기반 계산(예: 평균 tok/s)은 불가능.
 
+### 위젯별 config 옵션
+
+위젯 고유 옵션은 `config.go`의 `WidgetConfig`에 **위젯별 struct**로 네임스페이스를 둔다
+(`widgets.<widget>.<option>`). 전역 평면 키나 `map[string]any` 범용 메커니즘은 쓰지 않는다 —
+타입 안전과 중앙 검증(`validateConfigWidgets`)을 유지하기 위함.
+
+1. `WidgetConfig`에 `<Widget>WidgetConfig` struct 필드 추가 (예: `Context ContextWidgetConfig`).
+2. 옵션 zero-value는 "미설정"으로 보고, `Config`에 해석 메서드를 둬 기본값으로 폴백
+   (예: `ContextBarWidth()` → 0이면 `defaultContextBarWidth`).
+3. 숫자 옵션은 `validateConfigWidgets`에서 범위 clamp + stderr 경고 후 0으로 리셋.
+4. 위젯 `Render`/`GetData`는 `ctx.Config`로 해석 메서드를 호출한다.
+
 ## 빌드 / 테스트
 
 ```bash

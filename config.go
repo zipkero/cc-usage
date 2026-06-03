@@ -9,13 +9,35 @@ import (
 
 // Config represents the user configuration from cc-usage.json.
 type Config struct {
-	Language        string     `json:"language"`
-	DisplayMode     string     `json:"displayMode"`
-	Lines           [][]string `json:"lines,omitempty"`
-	DisabledWidgets []string   `json:"disabledWidgets,omitempty"`
-	Theme           string     `json:"theme,omitempty"`
-	Separator       string     `json:"separator,omitempty"`
-	Preset          string     `json:"preset,omitempty"`
+	Language        string       `json:"language"`
+	DisplayMode     string       `json:"displayMode"`
+	Lines           [][]string   `json:"lines,omitempty"`
+	DisabledWidgets []string     `json:"disabledWidgets,omitempty"`
+	Theme           string       `json:"theme,omitempty"`
+	Separator       string       `json:"separator,omitempty"`
+	Preset          string       `json:"preset,omitempty"`
+	Widgets         WidgetConfig `json:"widgets,omitempty"`
+}
+
+// WidgetConfig holds per-widget options, namespaced by widget. 위젯별 옵션은
+// 각자의 struct가 소유한다 — 새 위젯 옵션은 여기에 필드를 추가한다.
+type WidgetConfig struct {
+	Context ContextWidgetConfig `json:"context,omitempty"`
+}
+
+// ContextWidgetConfig holds context widget options. BarWidth 0은 "미설정"으로
+// 취급되어 기본값(defaultContextBarWidth)으로 해석된다.
+type ContextWidgetConfig struct {
+	BarWidth int `json:"barWidth,omitempty"`
+}
+
+// ContextBarWidth resolves the configured context progress bar width, falling
+// back to the default when unset (0).
+func (c Config) ContextBarWidth() int {
+	if c.Widgets.Context.BarWidth == 0 {
+		return defaultContextBarWidth
+	}
+	return c.Widgets.Context.BarWidth
 }
 
 // defaultConfig returns the Config with default values.
@@ -59,6 +81,7 @@ func loadConfig(path string) Config {
 		cfg.DisplayMode = defaults.DisplayMode
 	}
 	validateConfigEnums(&cfg)
+	validateConfigWidgets(&cfg)
 
 	return cfg
 }
@@ -96,6 +119,19 @@ func validateConfigEnums(cfg *Config) {
 		}
 		fmt.Fprintln(os.Stderr, formatEnumWarning(c.field, v, c.allowed, c.fallback))
 		*c.value = c.fallback
+	}
+}
+
+// validateConfigWidgets clamps numeric per-widget options to their valid
+// ranges. Out-of-range non-zero values emit a single-line stderr warning
+// (independent of DEBUG) and reset to 0 ("use default"). 0은 미설정으로 통과.
+func validateConfigWidgets(cfg *Config) {
+	w := cfg.Widgets.Context.BarWidth
+	if w != 0 && (w < minContextBarWidth || w > maxContextBarWidth) {
+		fmt.Fprintf(os.Stderr,
+			"cc-usage: invalid config: widgets.context.barWidth=%d not in [%d,%d], falling back to %d\n",
+			w, minContextBarWidth, maxContextBarWidth, defaultContextBarWidth)
+		cfg.Widgets.Context.BarWidth = 0
 	}
 }
 

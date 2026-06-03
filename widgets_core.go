@@ -90,7 +90,7 @@ func (w contextWidget) GetData(ctx *Context) (any, error) {
 func (w contextWidget) Render(data any, ctx *Context) string {
 	d := data.(*contextData)
 	theme := getTheme(ctx.Config.Theme)
-	bar := renderProgressBar(d.Percent, theme)
+	bar := renderProgressBar(d.Percent, ctx.Config.ContextBarWidth(), theme)
 	color := getColorForPercent(d.Percent, theme)
 
 	var tokenColor, tokenReset string

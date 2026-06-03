@@ -143,8 +143,14 @@ func renderSeparator(style string, theme ThemeColors) string {
 	}
 }
 
-func renderProgressBar(percent int, theme ThemeColors) string {
-	const width = 8
+// context progress bar 폭 기본값과 허용 범위. config widgets.context.barWidth로 조정.
+const (
+	defaultContextBarWidth = 8
+	minContextBarWidth     = 1
+	maxContextBarWidth     = 40
+)
+
+func renderProgressBar(percent, width int, theme ThemeColors) string {
 	filled := int(math.Round(float64(percent) / 100.0 * float64(width)))
 	if filled > width {
 		filled = width

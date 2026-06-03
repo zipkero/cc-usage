@@ -82,6 +82,52 @@ func TestLoadConfigAcceptsV020Fields(t *testing.T) {
 	}
 }
 
+func TestContextBarWidthResolution(t *testing.T) {
+	// unset → default
+	if got := (Config{}).ContextBarWidth(); got != defaultContextBarWidth {
+		t.Errorf("unset ContextBarWidth() = %d, want %d", got, defaultContextBarWidth)
+	}
+	// explicit value honored
+	cfg := Config{Widgets: WidgetConfig{Context: ContextWidgetConfig{BarWidth: 12}}}
+	if got := cfg.ContextBarWidth(); got != 12 {
+		t.Errorf("ContextBarWidth() = %d, want 12", got)
+	}
+}
+
+func TestLoadConfigAcceptsContextBarWidth(t *testing.T) {
+	path := writeTempConfig(t, `{"widgets":{"context":{"barWidth":12}}}`)
+
+	var cfg Config
+	stderr := captureStderr(func() {
+		cfg = loadConfig(path)
+	})
+
+	if stderr != "" {
+		t.Fatalf("expected no stderr for valid barWidth, got %q", stderr)
+	}
+	if cfg.ContextBarWidth() != 12 {
+		t.Errorf("ContextBarWidth() = %d, want 12", cfg.ContextBarWidth())
+	}
+}
+
+func TestLoadConfigClampsOutOfRangeBarWidth(t *testing.T) {
+	path := writeTempConfig(t, `{"widgets":{"context":{"barWidth":999}}}`)
+
+	var cfg Config
+	stderr := captureStderr(func() {
+		cfg = loadConfig(path)
+	})
+
+	for _, needle := range []string{"barWidth", "999"} {
+		if !strings.Contains(stderr, needle) {
+			t.Errorf("stderr missing %q; got %q", needle, stderr)
+		}
+	}
+	if cfg.ContextBarWidth() != defaultContextBarWidth {
+		t.Errorf("ContextBarWidth() = %d, want %d (fallback)", cfg.ContextBarWidth(), defaultContextBarWidth)
+	}
+}
+
 func TestLoadConfigWarnsOnUnknownEnum(t *testing.T) {
 	path := writeTempConfig(t, `{"displayMode":"bogus"}`)
 

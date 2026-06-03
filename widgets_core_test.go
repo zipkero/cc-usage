@@ -30,27 +30,33 @@ func splitContextRender(t *testing.T, out string) (string, string, string) {
 func TestRenderProgressBarWidth(t *testing.T) {
 	theme := themes["default"]
 	cases := []struct {
+		width      int
 		percent    int
 		wantFilled int
 		wantEmpty  int
 	}{
-		{percent: 0, wantFilled: 0, wantEmpty: 8},
-		{percent: 50, wantFilled: 4, wantEmpty: 4},
-		{percent: 100, wantFilled: 8, wantEmpty: 0},
+		// default width 8
+		{width: 8, percent: 0, wantFilled: 0, wantEmpty: 8},
+		{width: 8, percent: 50, wantFilled: 4, wantEmpty: 4},
+		{width: 8, percent: 100, wantFilled: 8, wantEmpty: 0},
+		// custom width honored — param threads through
+		{width: 10, percent: 30, wantFilled: 3, wantEmpty: 7},
+		{width: 20, percent: 50, wantFilled: 10, wantEmpty: 10},
+		{width: 1, percent: 100, wantFilled: 1, wantEmpty: 0},
 	}
 
 	for _, tc := range cases {
-		bar := stripANSI(renderProgressBar(tc.percent, theme))
+		bar := stripANSI(renderProgressBar(tc.percent, tc.width, theme))
 		filled := strings.Count(bar, "█")
 		empty := strings.Count(bar, "░")
 		if filled != tc.wantFilled {
-			t.Fatalf("percent %d filled = %d, want %d in %q", tc.percent, filled, tc.wantFilled, bar)
+			t.Fatalf("width %d percent %d filled = %d, want %d in %q", tc.width, tc.percent, filled, tc.wantFilled, bar)
 		}
 		if empty != tc.wantEmpty {
-			t.Fatalf("percent %d empty = %d, want %d in %q", tc.percent, empty, tc.wantEmpty, bar)
+			t.Fatalf("width %d percent %d empty = %d, want %d in %q", tc.width, tc.percent, empty, tc.wantEmpty, bar)
 		}
-		if filled+empty != 8 {
-			t.Fatalf("percent %d width = %d, want 8 in %q", tc.percent, filled+empty, bar)
+		if filled+empty != tc.width {
+			t.Fatalf("width %d percent %d total = %d, want %d in %q", tc.width, tc.percent, filled+empty, tc.width, bar)
 		}
 	}
 }
