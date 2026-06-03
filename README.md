@@ -88,11 +88,9 @@ make build-local   # dist/cc-usage 생성
 ```json
 {
   "language": "auto",
-  "plan": "max",
   "displayMode": "compact",
   "theme": "default",
   "separator": "pipe",
-  "dailyBudget": 10.0,
   "disabledWidgets": []
 }
 ```
@@ -100,11 +98,9 @@ make build-local   # dist/cc-usage 생성
 | 필드 | 기본값 | 설명 |
 |------|--------|------|
 | `language` | `"auto"` | `"auto"`, `"en"`, `"ko"` |
-| `plan` | `"max"` | `"pro"`, `"max"` (현재 미사용) |
 | `displayMode` | `"compact"` | `"compact"` 또는 `"custom"` (custom은 `preset`/`lines` 정의 시 자동 적용) |
 | `theme` | `"default"` | 8개 테마 중 선택 |
 | `separator` | `"pipe"` | `"pipe"`, `"space"`, `"dot"`, `"arrow"` |
-| `dailyBudget` | - | 일일 예산 (USD, 현재 미사용) |
 | `disabledWidgets` | `[]` | 비활성화할 위젯 ID 목록 |
 | `preset` | - | 위젯 단축 문자열. 한 글자 = 한 위젯, `\|`로 줄 구분 (예: `"PMC$R"`) |
 | `lines` | - | 위젯 ID 배열의 배열로 직접 레이아웃 정의 (preset 대안) |
