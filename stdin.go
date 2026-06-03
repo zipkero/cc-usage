@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 )
 
@@ -27,11 +28,11 @@ type StdinInput struct {
 	} `json:"worktree,omitempty"`
 
 	ContextWindow struct {
-		TotalInputTokens    int  `json:"total_input_tokens"`
-		TotalOutputTokens   int  `json:"total_output_tokens"`
-		ContextWindowSize   int  `json:"context_window_size"`
-		UsedPercentage      *int `json:"used_percentage,omitempty"`
-		RemainingPercentage *int `json:"remaining_percentage,omitempty"`
+		TotalInputTokens    int      `json:"total_input_tokens"`
+		TotalOutputTokens   int      `json:"total_output_tokens"`
+		ContextWindowSize   int      `json:"context_window_size"`
+		UsedPercentage      *float64 `json:"used_percentage,omitempty"`
+		RemainingPercentage *float64 `json:"remaining_percentage,omitempty"`
 		CurrentUsage        struct {
 			InputTokens              int `json:"input_tokens"`
 			OutputTokens             int `json:"output_tokens"`
@@ -50,12 +51,12 @@ type StdinInput struct {
 
 	RateLimits *struct {
 		FiveHour *struct {
-			UsedPercentage int   `json:"used_percentage"`
-			ResetsAt       int64 `json:"resets_at"`
+			UsedPercentage float64 `json:"used_percentage"`
+			ResetsAt       int64   `json:"resets_at"`
 		} `json:"five_hour,omitempty"`
 		SevenDay *struct {
-			UsedPercentage int   `json:"used_percentage"`
-			ResetsAt       int64 `json:"resets_at"`
+			UsedPercentage float64 `json:"used_percentage"`
+			ResetsAt       int64   `json:"resets_at"`
 		} `json:"seven_day,omitempty"`
 	} `json:"rate_limits,omitempty"`
 
@@ -88,8 +89,15 @@ type StdinInput struct {
 
 // parseStdin reads and decodes JSON from stdin. Returns empty StdinInput on error.
 func parseStdin() StdinInput {
+	return parseStdinReader(os.Stdin)
+}
+
+// parseStdinReader decodes the status line JSON payload from r. Returns an
+// empty StdinInput on any decode error. Split from parseStdin so tests can
+// feed arbitrary readers.
+func parseStdinReader(r io.Reader) StdinInput {
 	var input StdinInput
-	if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
+	if err := json.NewDecoder(r).Decode(&input); err != nil {
 		debugLog("stdin", "parse error: %v", err)
 		return StdinInput{}
 	}

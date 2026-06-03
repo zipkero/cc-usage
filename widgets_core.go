@@ -73,7 +73,8 @@ func (w contextWidget) GetData(ctx *Context) (any, error) {
 
 	var percent int
 	if cw.UsedPercentage != nil {
-		percent = *cw.UsedPercentage
+		// Claude Code는 used_percentage를 소수(예: 8.4)로 보낼 수 있다 — clamp 후 정수 절삭.
+		percent = clampPercent(*cw.UsedPercentage)
 	} else {
 		total := cw.TotalInputTokens + cw.TotalOutputTokens
 		percent = calculatePercent(total, cw.ContextWindowSize)
@@ -142,7 +143,7 @@ func (w rateLimit5hWidget) GetData(ctx *Context) (any, error) {
 	if ctx.Stdin.RateLimits != nil && ctx.Stdin.RateLimits.FiveHour != nil {
 		rl := ctx.Stdin.RateLimits.FiveHour
 		return &rateLimitData{
-			Percent:  clampPercent(float64(rl.UsedPercentage)),
+			Percent:  clampPercent(rl.UsedPercentage),
 			ResetsAt: time.Unix(rl.ResetsAt, 0),
 		}, nil
 	}
@@ -163,7 +164,7 @@ func (w rateLimit7dWidget) GetData(ctx *Context) (any, error) {
 	if ctx.Stdin.RateLimits != nil && ctx.Stdin.RateLimits.SevenDay != nil {
 		rl := ctx.Stdin.RateLimits.SevenDay
 		return &rateLimitData{
-			Percent:  clampPercent(float64(rl.UsedPercentage)),
+			Percent:  clampPercent(rl.UsedPercentage),
 			ResetsAt: time.Unix(rl.ResetsAt, 0),
 		}, nil
 	}
