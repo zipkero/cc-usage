@@ -144,7 +144,7 @@ func renderSeparator(style string, theme ThemeColors) string {
 }
 
 func renderProgressBar(percent int, theme ThemeColors) string {
-	const width = 10
+	const width = 8
 	filled := int(math.Round(float64(percent) / 100.0 * float64(width)))
 	if filled > width {
 		filled = width
