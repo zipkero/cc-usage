@@ -50,20 +50,6 @@ func formatTimeRemaining(resetAt time.Time, now time.Time, t *Translations) stri
 	return fmt.Sprintf("%d%s", minutes, t.Time.Minutes)
 }
 
-func formatDuration(ms int64) string {
-	if ms <= 0 {
-		return "0m"
-	}
-	totalMinutes := int(ms / 60000)
-	hours := totalMinutes / 60
-	minutes := totalMinutes % 60
-
-	if hours > 0 {
-		return fmt.Sprintf("%dh%dm", hours, minutes)
-	}
-	return fmt.Sprintf("%dm", minutes)
-}
-
 func calculatePercent(current, total int) int {
 	if total <= 0 {
 		return 0

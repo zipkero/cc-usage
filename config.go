@@ -7,21 +7,15 @@ import (
 	"sort"
 )
 
-// CacheConfig holds cache-related settings.
-type CacheConfig struct {
-	TTLSeconds int `json:"ttlSeconds"`
-}
-
 // Config represents the user configuration from cc-usage.json.
 type Config struct {
-	Language        string      `json:"language"`
-	DisplayMode     string      `json:"displayMode"`
-	Lines           [][]string  `json:"lines,omitempty"`
-	DisabledWidgets []string    `json:"disabledWidgets,omitempty"`
-	Theme           string      `json:"theme,omitempty"`
-	Separator       string      `json:"separator,omitempty"`
-	Preset          string      `json:"preset,omitempty"`
-	Cache           CacheConfig `json:"cache"`
+	Language        string     `json:"language"`
+	DisplayMode     string     `json:"displayMode"`
+	Lines           [][]string `json:"lines,omitempty"`
+	DisabledWidgets []string   `json:"disabledWidgets,omitempty"`
+	Theme           string     `json:"theme,omitempty"`
+	Separator       string     `json:"separator,omitempty"`
+	Preset          string     `json:"preset,omitempty"`
 }
 
 // defaultConfig returns the Config with default values.
@@ -29,7 +23,6 @@ func defaultConfig() Config {
 	return Config{
 		Language:    "auto",
 		DisplayMode: "compact",
-		Cache:       CacheConfig{TTLSeconds: 300},
 	}
 }
 
@@ -65,10 +58,6 @@ func loadConfig(path string) Config {
 	if cfg.DisplayMode == "" {
 		cfg.DisplayMode = defaults.DisplayMode
 	}
-	if cfg.Cache.TTLSeconds == 0 {
-		cfg.Cache.TTLSeconds = defaults.Cache.TTLSeconds
-	}
-
 	validateConfigEnums(&cfg)
 
 	return cfg

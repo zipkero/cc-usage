@@ -16,6 +16,40 @@ import (
 // config knob (SPEC §3).
 const pathDisplayMaxRunes = 50
 
+// detectCwdEnv and detectCwdGetwd are package-level indirection points so
+// tests can swap the underlying lookups.
+var (
+	detectCwdEnv   = os.Getenv
+	detectCwdGetwd = os.Getwd
+)
+
+// detectCurrentCwd returns a normalized cwd guess for projectInfo when
+// workspace.current_dir is absent. CLAUDE_PROJECT_DIR wins over os.Getwd().
+func detectCurrentCwd() string {
+	cwd, _ := detectCurrentCwdWithSource()
+	return cwd
+}
+
+func detectCurrentCwdWithSource() (cwd, source string) {
+	if raw := detectCwdEnv("CLAUDE_PROJECT_DIR"); raw != "" {
+		return normalizeCwd(raw), "env"
+	}
+	if raw, err := detectCwdGetwd(); err == nil && raw != "" {
+		return normalizeCwd(raw), "getwd"
+	}
+	return "", ""
+}
+
+func normalizeCwd(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(raw); err == nil {
+		return resolved
+	}
+	return filepath.Clean(raw)
+}
+
 // --- projectInfo widget ---
 
 type projectInfoWidget struct{}

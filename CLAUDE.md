@@ -13,41 +13,22 @@ stdin (Claude Code JSON) → cc-usage → stdout (ANSI 컬러 텍스트)
 ## 아키텍처
 
 ```
-main.go            : 진입점 — config 로드 → stdin 파싱 → credential/API → orchestrate
-                     → degraded-input 복원 → 출력 → 세션 캐시 저장
+main.go            : 진입점 — config 로드 → stdin 파싱 → 무출력 판정 → orchestrate → 출력
 stdin.go           : Claude Code status line 프로토콜 JSON → StdinInput
 config.go          : {CLAUDE_CONFIG_DIR or ~/.claude}/cc-usage.json → Config (기본값 머지)
 widget.go          : Widget 인터페이스 + registry + displayPresets + presetCharToWidget
                      + orchestrate(): 라인별로 GetData/Render 후 separator 조인
-widgets_core.go    : model, context, cost, rateLimit{5h,7d,7dSonnet} 위젯
+widgets_core.go    : model, context, cost, rateLimit{5h,7d} 위젯
 widgets_project.go : projectInfo 위젯 (git porcelain=v2로 branch + ahead/behind)
-widgets_analytics.go : version, apiDuration, sessionDuration, burnRate, cacheHit, performance
-                       — stdin의 cost.* / context_window.current_usage.* / version에서만 파생
 render.go          : theme, separator, progress bar, ANSI 코드
 format.go          : 토큰/비용/시간/퍼센트 포맷터
-credentials.go     : OAuth 토큰 — macOS Keychain 우선, 실패 시 {configDir}/.credentials.json
-api.go             : 3-tier 캐시(memory → file → API) + negative cache + 403→curl fallback
-                     → https://api.anthropic.com/api/oauth/usage
-cache.go           : session-state 캐시(직전 stdin 보존) + atomicWriteFile
-file_lock_{unix,windows}.go : 동시 실행 시 캐시 파일 경합 방지용 OS별 advisory lock
 locales/{en,ko}.json : i18n 문자열 (go:embed로 임베드)
 ```
 
-### Degraded-input 복원 (main.go:83-111)
+### 무출력 조건
 
-Claude Code는 idle/reload 직후 종종 workspace나 사용량이 비어있는 stdin을 보낸다.
-직전 정상 실행을 `~/.cache/cc-usage/session-state-<key>.json`에 저장해두고, 현재 실행의
-위젯 수가 더 적거나 workspace가 비어있으면 그 캐시로 fields를 복원한 뒤 **다시 orchestrate**한다.
-
-- `workspaceRestoreTTL = 60s` — 캐시 보강 eligibility 전체를 지배하는 단일 TTL. 이 기간을 초과한 캐시는 어떤 필드(workspace·model·cost·context)도 복원하지 않음. cwd-exact-match 가드가 cross-workspace 정확성을 담당하고, 이 TTL은 동일 workspace 내 stale 노출 창을 좁히는 역할.
-- `sessionStateTTL = 300s` — 세션 캐시 파일 유효 기간 (만료 파일은 load 즉시 무시·삭제)
-- `RateLimits`는 절대 캐시에서 복원하지 않음. 항상 API 캐시(`cache-<tokenHash>.json`)에서 fresh하게 가져옴.
-- 캐시 키는 `session_id > remote.session_id > agent_id > transcript_path > cwd` 우선순위 (cache.go:38).
-
-### 무출력 조건 (main.go:118-124)
-
-캐시 복원 후에도 `workspace.current_dir`, `model.id/display_name`, `context_window_size`가
-모두 비어있으면 출력을 **완전히 생략**. `$0.00 │ 5h: --` 같은 빈 status line 방지.
+`workspace.current_dir`, `model.id/display_name`, `context_window_size`가 모두 비어있으면 출력을
+**완전히 생략**. 이전 실행 값이나 rate limit API 값으로 보강하지 않는다.
 
 ## 위젯 추가 절차
 
@@ -63,8 +44,7 @@ Claude Code는 idle/reload 직후 종종 workspace나 사용량이 비어있는 
 - 새 위젯은 widget 종류에 따라:
   - **Core** (모델/컨텍스트/비용/rate limit): `widgets_core.go`
   - **Project**: `widgets_project.go`
-  - **Analytics** (stdin payload 산술/표시): `widgets_analytics.go`
-- stdin payload에 데이터가 실제로 들어오는지 먼저 확인할 것 (`~/.cache/cc-usage/session-state-*.json`이 실측 샘플).
+- stdin payload에 데이터가 실제로 들어오는지 먼저 확인할 것.
   struct 필드가 있다고 항상 채워지는 건 아니다 — 예: `worktree`, `vim`, `agent`, `remote`는 일반적으로 비어있음.
 - 또한 `context_window.total_output_tokens`는 **세션 누적이 아니라 현재 턴 output**이다
   (`current_usage.output_tokens`와 항상 일치). 누적 output token 기반 계산(예: 평균 tok/s)은 불가능.
@@ -85,8 +65,8 @@ go build ./...
 ### 동작 확인 (수동)
 
 ```bash
-echo '{"model":{"id":"claude-opus-4-6","display_name":"Opus"},"workspace":{"current_dir":"/tmp"},"context_window":{"total_input_tokens":50000,"total_output_tokens":10000,"context_window_size":200000,"current_usage":{"input_tokens":50000,"output_tokens":10000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"cost":{"total_cost_usd":1.25}}' | ./dist/cc-usage
-# 기대: tmp │ ◆ claude-opus-4-6 │ ████░░░░ 30% 60K │ $1.25
+echo '{"model":{"id":"claude-opus-4-6","display_name":"Opus"},"workspace":{"current_dir":"/tmp"},"context_window":{"total_input_tokens":50000,"total_output_tokens":10000,"context_window_size":200000,"current_usage":{"input_tokens":50000,"output_tokens":10000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"cost":{"total_cost_usd":1.25},"rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0},"seven_day":{"used_percentage":69,"resets_at":0}}}' | ./dist/cc-usage
+# 기대: tmp │ ◆ claude-opus-4-6 │ ████░░░░ 30% 60K │ $1.25 │ 5h: 42% │ 7d: 69%
 ```
 
 ### 디버그 로그
@@ -117,9 +97,6 @@ DEBUG=cc-usage ./dist/cc-usage <<< '{...}'   # 또는 DEBUG=1
 | 용도 | 경로 | 비고 |
 |------|------|------|
 | 설정 | `--config <path>` 또는 `{CLAUDE_CONFIG_DIR or ~/.claude}/cc-usage.json` | env 미설정 시 `~/.claude` |
-| 인증 | `{configDir}/.credentials.json` | configDir = `--config` dirname, 없으면 `CLAUDE_CONFIG_DIR or ~/.claude` |
-| API 캐시 | `~/.cache/cc-usage/cache-<tokenHash>.json` | configDir 무관 (전역) |
-| 세션 캐시 | `~/.cache/cc-usage/session-state-<key>.json` | configDir 무관 (전역) |
 
 ## 설계 문서
 
@@ -127,7 +104,7 @@ DEBUG=cc-usage ./dist/cc-usage <<< '{...}'   # 또는 DEBUG=1
 
 - **`README.md`**: 사용자 대상 — install / config / 노출 위젯 / troubleshooting.
 - **`CLAUDE.md`**: 개발자·Claude 대상 — 아키텍처, 위젯 추가 절차, 빌드/테스트, 배포 절차.
-- **소스 코드**: 런타임 진실 — `stdin.go` (입력 스키마), `widget.go`+`widgets_*.go` (위젯 명세), `api.go` (외부 API), `config.go` (설정 스키마), `locales/*.json` (i18n).
+- **소스 코드**: 런타임 진실 — `stdin.go` (입력 스키마), `widget.go`+`widgets_*.go` (위젯 명세), `config.go` (설정 스키마), `locales/*.json` (i18n).
 
 진행 상태 트래커는 `docs/<feature-dir>/` 아래의 spec/analysis/implement.md가 담당한다. 새 위젯·새 캐시·새 외부 통합 같은 의미 있는 설계는 그 feature spec에서 commit한다.
 
@@ -152,7 +129,8 @@ DEBUG=cc-usage ./dist/cc-usage <<< '{...}'   # 또는 DEBUG=1
 
 ### 버전 정책
 
-사용자가 체감 가능한 fix·feature 변경은 항상 SemVer patch(또는 minor) bump를 동반한다 (`Makefile` VERSION, `.claude-plugin/plugin.json` version, `api.go` userAgent 세 곳을 같은 값으로 동시 갱신).
+사용자가 체감 가능한 fix·feature 변경은 항상 SemVer patch(또는 minor) bump를 동반한다
+(`Makefile` VERSION, `.claude-plugin/plugin.json` version을 같은 값으로 동시 갱신).
 
 - 이유: `/plugin` UI의 update 감지는 `plugin.json`의 version 필드 변화에 의존한다. 동등 hash 재빌드만 push하면 사용자 머신의 marketplaces 사본이 stale로 고착되어 fix가 적용되지 않는다.
 - version-only commit은 권장하지 않으며 해당 fix·feature commit에 묶어 한 번에 올린다.

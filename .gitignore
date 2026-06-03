@@ -35,5 +35,8 @@ dist/
 .vscode
 .idea
 
+# macOS
+.DS_Store
+
 # go build ./... 산출물 (module root)
 /cc-usage

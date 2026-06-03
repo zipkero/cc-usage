@@ -1,12 +1,5 @@
 {
   "model": { "opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku" },
-  "labels": { "fiveH": "5h", "sevenD": "7d", "sevenDSonnet": "7d-S" },
-  "time": { "days": "d", "hours": "h", "minutes": "m", "seconds": "s" },
-  "widgets": {
-    "apiDuration": "API",
-    "burnRate": "Burn",
-    "cache": "Cache",
-    "performance": "Perf",
-    "session": "Session"
-  }
+  "labels": { "fiveH": "5h", "sevenD": "7d" },
+  "time": { "days": "d", "hours": "h", "minutes": "m", "seconds": "s" }
 }

@@ -21,9 +21,8 @@ type Translations struct {
 		Haiku  string `json:"haiku"`
 	} `json:"model"`
 	Labels struct {
-		FiveH        string `json:"fiveH"`
-		SevenD       string `json:"sevenD"`
-		SevenDSonnet string `json:"sevenDSonnet"`
+		FiveH  string `json:"fiveH"`
+		SevenD string `json:"sevenD"`
 	} `json:"labels"`
 	Time struct {
 		Days    string `json:"days"`
@@ -31,13 +30,6 @@ type Translations struct {
 		Minutes string `json:"minutes"`
 		Seconds string `json:"seconds"`
 	} `json:"time"`
-	Widgets struct {
-		ApiDuration string `json:"apiDuration"`
-		BurnRate    string `json:"burnRate"`
-		Cache       string `json:"cache"`
-		Performance string `json:"performance"`
-		Session     string `json:"session"`
-	} `json:"widgets"`
 }
 
 // loadTranslations loads the appropriate locale based on language setting.
@@ -75,12 +67,9 @@ func detectLanguage() string {
 
 // Context holds all data needed by widgets.
 type Context struct {
-	Stdin          StdinInput
-	Config         Config
-	ConfigDir      string
-	Translations   *Translations
-	RateLimits     *UsageLimits
-	CostEstimated  bool // true when cost is derived from transcript (not direct stdin)
+	Stdin        StdinInput
+	Config       Config
+	Translations *Translations
 }
 
 // Widget is the interface all widgets must implement.
@@ -101,12 +90,12 @@ func registerWidget(w Widget) {
 // 그 이상이 필요하면 사용자가 Config.Preset / Config.Lines로 custom 레이아웃을 정의한다.
 var displayPresets = map[string][][]string{
 	"compact": {
-		{"projectInfo", "model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"},
+		{"projectInfo", "model", "context", "cost", "rateLimit5h", "rateLimit7d"},
 	},
 }
 
 // presetCharToWidget maps single characters to widget IDs for compact preset notation.
-// 등록된 위젯에 대응하는 char만 매핑한다 (widgets_core.go, widgets_project.go, widgets_analytics.go).
+// 등록된 위젯에 대응하는 char만 매핑한다 (widgets_core.go, widgets_project.go).
 var presetCharToWidget = map[byte]string{
 	// core
 	'M': "model",
@@ -114,15 +103,7 @@ var presetCharToWidget = map[byte]string{
 	'$': "cost",
 	'R': "rateLimit5h",
 	'7': "rateLimit7d",
-	'S': "rateLimit7dSonnet",
 	'P': "projectInfo",
-	// analytics
-	'V': "version",
-	'a': "apiDuration",
-	'D': "sessionDuration",
-	'B': "burnRate",
-	'H': "cacheHit",
-	'F': "performance",
 }
 
 // resolvePreset parses Config.Preset into Config.Lines.

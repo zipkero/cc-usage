@@ -59,13 +59,10 @@ func TestLoadConfigMergesDefaults(t *testing.T) {
 	if cfg.DisplayMode != "compact" {
 		t.Errorf("DisplayMode = %q, want %q (default merged)", cfg.DisplayMode, "compact")
 	}
-	if cfg.Cache.TTLSeconds != 300 {
-		t.Errorf("Cache.TTLSeconds = %d, want 300 (default merged)", cfg.Cache.TTLSeconds)
-	}
 }
 
 func TestLoadConfigAcceptsV020Fields(t *testing.T) {
-	path := writeTempConfig(t, `{"dailyBudget":5.0,"plan":"max","language":"ko"}`)
+	path := writeTempConfig(t, `{"dailyBudget":5.0,"plan":"max","cache":{"ttlSeconds":300},"language":"ko"}`)
 
 	var cfg Config
 	stderr := captureStderr(func() {
@@ -78,8 +75,10 @@ func TestLoadConfigAcceptsV020Fields(t *testing.T) {
 	if stderr != "" {
 		t.Errorf("expected no stderr for v0.2.0 fields, got %q", stderr)
 	}
-	if strings.Contains(stderr, "dailyBudget") || strings.Contains(stderr, "plan") {
-		t.Errorf("stderr leaked v0.2.0 field names: %q", stderr)
+	for _, field := range []string{"dailyBudget", "plan", "cache", "ttlSeconds"} {
+		if strings.Contains(stderr, field) {
+			t.Errorf("stderr leaked ignored field %q: %q", field, stderr)
+		}
 	}
 }
 

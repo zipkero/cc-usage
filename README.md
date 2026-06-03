@@ -82,8 +82,8 @@ make build-local   # dist/cc-usage 생성
 ## Configuration
 
 설정 파일: `~/.claude/cc-usage.json` (또는 `--config`로 지정).
-`CLAUDE_CONFIG_DIR`로 config 홈을 옮긴 환경에서는 그 아래의 `cc-usage.json` /
-`.credentials.json`을 따른다 (env 미설정 시 `~/.claude`).
+`CLAUDE_CONFIG_DIR`로 config 홈을 옮긴 환경에서는 그 아래의 `cc-usage.json`을 따른다
+(env 미설정 시 `~/.claude`).
 
 ```json
 {
@@ -93,8 +93,7 @@ make build-local   # dist/cc-usage 생성
   "theme": "default",
   "separator": "pipe",
   "dailyBudget": 10.0,
-  "disabledWidgets": [],
-  "cache": { "ttlSeconds": 300 }
+  "disabledWidgets": []
 }
 ```
 
@@ -107,7 +106,7 @@ make build-local   # dist/cc-usage 생성
 | `separator` | `"pipe"` | `"pipe"`, `"space"`, `"dot"`, `"arrow"` |
 | `dailyBudget` | - | 일일 예산 (USD, 현재 미사용) |
 | `disabledWidgets` | `[]` | 비활성화할 위젯 ID 목록 |
-| `preset` | - | 위젯 단축 문자열. 한 글자 = 한 위젯, `\|`로 줄 구분 (예: `"PMC$R\|VaDBHF"`) |
+| `preset` | - | 위젯 단축 문자열. 한 글자 = 한 위젯, `\|`로 줄 구분 (예: `"PMC$R"`) |
 | `lines` | - | 위젯 ID 배열의 배열로 직접 레이아웃 정의 (preset 대안) |
 
 ## Widgets
@@ -121,31 +120,19 @@ make build-local   # dist/cc-usage 생성
 | `cost` | `$` | 세션 비용 |
 | `rateLimit5h` | `R` | 5시간 rate limit |
 | `rateLimit7d` | `7` | 7일 rate limit |
-| `rateLimit7dSonnet` | `S` | 7일 Sonnet rate limit |
 | `projectInfo` | `P` | 디렉토리 + git branch (+ worktree, subpath) |
 
-### Analytics (옵션 — preset/lines로 노출)
-
-stdin payload에서 바로 계산되는 값들. compact 모드에는 포함되지 않으며, 위 `preset` char를 조합해서 노출시킵니다.
-
-| ID | preset char | 설명 |
-|----|:-:|------|
-| `version` | `V` | Claude Code 앱 버전 (`v2.1.150`) |
-| `apiDuration` | `a` | 누적 API 호출 시간 (`API: 14m`) |
-| `sessionDuration` | `D` | 세션 누적 시간 (`Session: 45m`) |
-| `burnRate` | `B` | 시간당 비용 (`Burn: $5.69/h`) |
-| `cacheHit` | `H` | 마지막 턴 캐시 히트율 (`Cache: 93%`) |
-| `performance` | `F` | API time / 전체 세션 time 비율 (`Perf: 32%`) |
-
-> **preset 예시**: `"PMC$R\|VaDBHF"` → 1줄 `projectInfo │ model │ context │ cost │ rateLimit5h`, 2줄 `version │ apiDuration │ sessionDuration │ burnRate │ cacheHit │ performance`. `disabledWidgets`로 일부만 꺼서 라인을 단순화할 수 있습니다.
+> **preset 예시**: `"PMC$R"` → `projectInfo │ model │ context │ cost │ rateLimit5h`.
+> `disabledWidgets`로 일부만 꺼서 라인을 단순화할 수 있습니다.
 
 ## Troubleshooting
 
 ### Idle 시 `projectInfo`가 가끔 사라지는 경우
 
-Claude Code는 주기적으로 status line을 갱신하지 않고 이벤트 기반으로만 호출한다. Idle 상태에서 `workspace.current_dir`가 비어있는 stdin이 오면 `projectInfo` 위젯이 생략될 수 있다.
-
-이를 완화하기 위해 직전 렌더의 workspace/worktree를 로컬 세션 캐시(`~/.cache/cc-usage/session-state-*.json`)에서 복원한다. 단, **30초 이내**의 캐시만 사용한다 — 사용자가 `cd`로 디렉터리를 옮긴 뒤 긴 idle이 발생했을 때 이전 경로가 고착되는 것을 막기 위함이다. 30초를 초과한 idle에서는 복원하지 않고 위젯을 생략한다.
+Claude Code는 주기적으로 status line을 갱신하지 않고 이벤트 기반으로만 호출한다.
+`workspace.current_dir`가 비어있는 stdin이 오면 cc-usage는 `CLAUDE_PROJECT_DIR` 또는 현재 작업
+디렉터리를 사용해 `projectInfo`를 표시한다. 둘 다 확인할 수 없으면 이전 값을 복원하지 않고
+위젯을 생략한다.
 
 ### 플러그인 업데이트 시 SSH 인증 오류 (Windows)
 
@@ -165,8 +152,10 @@ git config --global url."https://github.com/".insteadOf "git@github.com:"
 cc-usage는 외부 서버로 데이터를 전송하지 않는다.
 
 - **입력**: Claude Code가 stdin으로 넘겨주는 세션 정보(model, context, cost, workspace path 등)만 읽는다.
-- **네트워크**: OAuth 토큰(`{CLAUDE_CONFIG_DIR or ~/.claude}/.credentials.json`)으로 Anthropic 공식 API(`api.anthropic.com`)만 호출하여 rate limit을 조회한다. 제3자 서버나 애널리틱스는 사용하지 않는다.
-- **저장**: `~/.cache/cc-usage/`에 rate limit 응답과 세션 스냅샷을 로컬 캐시한다. 사용자가 직접 삭제할 수 있다.
+- **네트워크**: cc-usage는 네트워크 엔드포인트에 접속하지 않는다.
+- **저장**: status line 렌더 중 별도 캐시 파일을 읽거나 쓰지 않는다. 예전 버전이 만든
+  `~/.cache/cc-usage/` 파일은 더 이상 사용하지 않으며 사용자가 직접 삭제할 수 있다.
+- **git**: `projectInfo` 표시를 위해 현재 작업 디렉터리에서 `git status --porcelain=v2 --branch`를 실행할 수 있다.
 - **텔레메트리**: 없음.
 
 ## License
