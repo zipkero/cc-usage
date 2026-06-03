@@ -34,9 +34,9 @@ func TestRenderProgressBarWidth(t *testing.T) {
 		wantFilled int
 		wantEmpty  int
 	}{
-		{percent: 0, wantFilled: 0, wantEmpty: 7},
-		{percent: 50, wantFilled: 4, wantEmpty: 3},
-		{percent: 100, wantFilled: 7, wantEmpty: 0},
+		{percent: 0, wantFilled: 0, wantEmpty: 10},
+		{percent: 50, wantFilled: 5, wantEmpty: 5},
+		{percent: 100, wantFilled: 10, wantEmpty: 0},
 	}
 
 	for _, tc := range cases {
@@ -49,8 +49,8 @@ func TestRenderProgressBarWidth(t *testing.T) {
 		if empty != tc.wantEmpty {
 			t.Fatalf("percent %d empty = %d, want %d in %q", tc.percent, empty, tc.wantEmpty, bar)
 		}
-		if filled+empty != 7 {
-			t.Fatalf("percent %d width = %d, want 7 in %q", tc.percent, filled+empty, bar)
+		if filled+empty != 10 {
+			t.Fatalf("percent %d width = %d, want 10 in %q", tc.percent, filled+empty, bar)
 		}
 	}
 }
