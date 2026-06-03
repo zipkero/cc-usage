@@ -3,7 +3,7 @@
 Claude Code status line plugin. 모델, 컨텍스트 사용량, 비용, rate limit 등을 status line에 표시한다.
 
 ```
-my-project (main) │ ◆ Opus │ ████░░░░ 30% 60K │ $1.25 │ 5h: 42% │ 7d: 69%
+my-project (main) │ ◆ Opus │ ███░░░░░░░ 30% 60K │ $1.25 │ 5h: 42% │ 7d: 69%
 ```
 
 > 이 브랜치는 marketplace 배포용 pre-built 바이너리만 포함합니다. **소스 코드와 빌드 환경은 [`main` 브랜치](https://github.com/zipkero/cc-usage/tree/main)에 있습니다.**
