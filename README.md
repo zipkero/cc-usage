@@ -99,7 +99,8 @@ chmod +x bin/run.sh bin/cc-usage-*   # macOS / Linux 만 해당
   "displayMode": "compact",
   "theme": "default",
   "separator": "pipe",
-  "disabledWidgets": []
+  "disabledWidgets": [],
+  "widgets": { "context": { "barWidth": 8 } }
 }
 ```
 
@@ -112,6 +113,13 @@ chmod +x bin/run.sh bin/cc-usage-*   # macOS / Linux 만 해당
 | `disabledWidgets` | `[]` | 비활성화할 위젯 ID 목록 |
 | `preset` | - | 위젯 단축 문자열. 한 글자 = 한 위젯, `\|`로 줄 구분 (예: `"PMC$R"`) |
 | `lines` | - | 위젯 ID 배열의 배열로 직접 레이아웃 정의 (preset 대안) |
+| `widgets` | - | 위젯별 옵션 (네임스페이스). 아래 *위젯 옵션* 참고 |
+
+### 위젯 옵션 (`widgets`)
+
+| 경로 | 기본값 | 설명 |
+|------|--------|------|
+| `widgets.context.barWidth` | `8` | context 프로그레스바 폭(칸 수). 허용 범위 `1`~`40`, 벗어나면 경고 후 기본값 사용 |
 
 ## Widgets
 
