@@ -104,6 +104,7 @@ var presetCharToWidget = map[byte]string{
 	'R': "rateLimit5h",
 	'7': "rateLimit7d",
 	'P': "projectInfo",
+	'N': "projectName",
 }
 
 // resolvePreset parses Config.Preset into Config.Lines.

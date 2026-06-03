@@ -50,6 +50,40 @@ func normalizeCwd(raw string) string {
 	return filepath.Clean(raw)
 }
 
+func gitBranch(dir string) string {
+	if _, err := exec.LookPath("git"); err != nil {
+		return ""
+	}
+
+	gitCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	statusCmd := exec.CommandContext(gitCtx, "git", "status", "--porcelain=v2", "--branch")
+	statusCmd.Dir = dir
+	out, err := statusCmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.HasPrefix(line, "# branch.") {
+			if len(line) > 0 && line[0] != '#' {
+				break
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "# branch.head ") {
+			name := strings.TrimPrefix(line, "# branch.head ")
+			if name == "(detached)" {
+				return ""
+			}
+			return name
+		}
+	}
+
+	return ""
+}
+
 // --- projectInfo widget ---
 
 type projectInfoWidget struct{}
@@ -57,9 +91,6 @@ type projectInfoWidget struct{}
 type projectInfoData struct {
 	DisplayPath string
 	Branch      string
-	Ahead       int
-	Behind      int
-	Worktree    string
 }
 
 func (w projectInfoWidget) ID() string { return "projectInfo" }
@@ -80,51 +111,7 @@ func (w projectInfoWidget) GetData(ctx *Context) (any, error) {
 	home, _ := os.UserHomeDir()
 	d := &projectInfoData{
 		DisplayPath: shrinkPath(compressHome(currentDir, home), pathDisplayMaxRunes),
-	}
-
-	// worktree
-	if ctx.Stdin.Worktree != nil && ctx.Stdin.Worktree.Name != "" {
-		d.Worktree = ctx.Stdin.Worktree.Name
-	}
-
-	// git branch + ahead/behind in a single call
-	if _, err := exec.LookPath("git"); err != nil {
-		return d, nil
-	}
-
-	gitCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	// porcelain=v2 --branch emits `# branch.head <name>` and (when upstream exists)
-	// `# branch.ab +<ahead> -<behind>` as the first lines. One fork instead of two.
-	statusCmd := exec.CommandContext(gitCtx, "git", "status", "--porcelain=v2", "--branch")
-	statusCmd.Dir = currentDir
-	out, err := statusCmd.Output()
-	if err != nil {
-		return d, nil
-	}
-
-	for _, line := range strings.Split(string(out), "\n") {
-		if !strings.HasPrefix(line, "# branch.") {
-			if len(line) > 0 && line[0] != '#' {
-				break // header lines end; entry lines start
-			}
-			continue
-		}
-		switch {
-		case strings.HasPrefix(line, "# branch.head "):
-			name := strings.TrimPrefix(line, "# branch.head ")
-			if name != "(detached)" {
-				d.Branch = name
-			}
-		case strings.HasPrefix(line, "# branch.ab "):
-			ab := strings.TrimPrefix(line, "# branch.ab ")
-			parts := strings.Fields(ab) // ["+<ahead>", "-<behind>"]
-			if len(parts) == 2 {
-				fmt.Sscanf(parts[0], "+%d", &d.Ahead)
-				fmt.Sscanf(parts[1], "-%d", &d.Behind)
-			}
-		}
+		Branch:      gitBranch(currentDir),
 	}
 
 	return d, nil
@@ -141,21 +128,47 @@ func (w projectInfoWidget) Render(data any, ctx *Context) string {
 
 	// branch info
 	if d.Branch != "" {
-		b.WriteString(fmt.Sprintf(" %s(%s", theme.Branch, d.Branch))
-		if d.Ahead > 0 {
-			b.WriteString(fmt.Sprintf(" ↑%d", d.Ahead))
-		}
-		if d.Behind > 0 {
-			b.WriteString(fmt.Sprintf(" ↓%d", d.Behind))
-		}
-		b.WriteString(fmt.Sprintf(")%s", RESET))
+		b.WriteString(fmt.Sprintf(" %s(%s)%s", theme.Branch, d.Branch, RESET))
 	}
 
-	// worktree
-	if d.Worktree != "" {
-		b.WriteString(fmt.Sprintf(" %s[%s]%s", theme.Info, d.Worktree, RESET))
+	return b.String()
+}
+
+// --- projectName widget ---
+
+type projectNameWidget struct{}
+
+type projectNameData struct {
+	Name   string
+	Branch string
+}
+
+func (w projectNameWidget) ID() string { return "projectName" }
+
+func (w projectNameWidget) GetData(ctx *Context) (any, error) {
+	currentDir := ctx.Stdin.Workspace.CurrentDir
+	if currentDir == "" {
+		currentDir = detectCurrentCwd()
+		if currentDir == "" {
+			return nil, nil
+		}
 	}
 
+	return &projectNameData{
+		Name:   filepath.Base(currentDir),
+		Branch: gitBranch(currentDir),
+	}, nil
+}
+
+func (w projectNameWidget) Render(data any, ctx *Context) string {
+	d := data.(*projectNameData)
+	theme := getTheme(ctx.Config.Theme)
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("%s%s%s", theme.Folder, d.Name, RESET))
+	if d.Branch != "" {
+		b.WriteString(fmt.Sprintf(" %s(%s)%s", theme.Branch, d.Branch, RESET))
+	}
 	return b.String()
 }
 
@@ -222,4 +235,5 @@ func shrinkPath(s string, max int) string {
 
 func init() {
 	registerWidget(projectInfoWidget{})
+	registerWidget(projectNameWidget{})
 }

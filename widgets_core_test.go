@@ -27,6 +27,34 @@ func splitContextRender(t *testing.T, out string) (string, string, string) {
 	return parts[0], parts[1], parts[2]
 }
 
+func TestRenderProgressBarWidth(t *testing.T) {
+	theme := themes["default"]
+	cases := []struct {
+		percent    int
+		wantFilled int
+		wantEmpty  int
+	}{
+		{percent: 0, wantFilled: 0, wantEmpty: 7},
+		{percent: 50, wantFilled: 4, wantEmpty: 3},
+		{percent: 100, wantFilled: 7, wantEmpty: 0},
+	}
+
+	for _, tc := range cases {
+		bar := stripANSI(renderProgressBar(tc.percent, theme))
+		filled := strings.Count(bar, "█")
+		empty := strings.Count(bar, "░")
+		if filled != tc.wantFilled {
+			t.Fatalf("percent %d filled = %d, want %d in %q", tc.percent, filled, tc.wantFilled, bar)
+		}
+		if empty != tc.wantEmpty {
+			t.Fatalf("percent %d empty = %d, want %d in %q", tc.percent, empty, tc.wantEmpty, bar)
+		}
+		if filled+empty != 7 {
+			t.Fatalf("percent %d width = %d, want 7 in %q", tc.percent, filled+empty, bar)
+		}
+	}
+}
+
 // TestContextWidgetRender_TokenColor pins the token-color branching added
 // in task-001: token chunk is wrapped in theme.Warning at >=256K, in
 // theme.Danger at >=512K, and left bare below 256K. percent-color

@@ -6,6 +6,32 @@ import (
 	"unicode/utf8"
 )
 
+func stripANSI(s string) string {
+	var b strings.Builder
+	inEscape := false
+	inCSI := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inEscape {
+			if !inCSI && c == '[' {
+				inCSI = true
+				continue
+			}
+			if c >= '@' && c <= '~' {
+				inEscape = false
+				inCSI = false
+			}
+			continue
+		}
+		if c == '\x1b' {
+			inEscape = true
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
 // TestProjectInfoGetDataCwdFallback checks that projectInfoWidget.GetData uses
 // detectCurrentCwd() as a fallback when Workspace.CurrentDir is empty, and
 // returns nil when detectCurrentCwd() also returns "" (SPEC §5.4, task-007).
@@ -107,6 +133,120 @@ func TestProjectInfoGetDataCwdFallback(t *testing.T) {
 			t.Errorf("DisplayPath %q does not contain expected 'workspace' segment", d.DisplayPath)
 		}
 	})
+}
+
+func TestProjectInfoOmitsRemovedStatusTokens(t *testing.T) {
+	w := projectInfoWidget{}
+	ctx := &Context{
+		Stdin:  StdinInput{},
+		Config: Config{Theme: "default"},
+	}
+	ctx.Stdin.Workspace.CurrentDir = "/tmp/project"
+	ctx.Stdin.Worktree = &struct {
+		Name           string `json:"name"`
+		Path           string `json:"path"`
+		Branch         string `json:"branch"`
+		OriginalCwd    string `json:"original_cwd"`
+		OriginalBranch string `json:"original_branch"`
+	}{Name: "feature-worktree"}
+
+	data, err := w.GetData(ctx)
+	if err != nil {
+		t.Fatalf("GetData returned error: %v", err)
+	}
+	if data == nil {
+		t.Fatal("GetData returned nil, want non-nil projectInfoData")
+	}
+	rendered := stripANSI(w.Render(data, ctx))
+	for _, token := range []string{"↑", "↓", "[", "]", "feature-worktree"} {
+		if strings.Contains(rendered, token) {
+			t.Fatalf("projectInfo rendered removed token %q in %q", token, rendered)
+		}
+	}
+
+	rendered = w.Render(&projectInfoData{
+		DisplayPath: "/tmp/project",
+		Branch:      "main",
+	}, ctx)
+	rendered = stripANSI(rendered)
+	if !strings.Contains(rendered, "/tmp/project") {
+		t.Fatalf("projectInfo render = %q, want display path", rendered)
+	}
+	if !strings.Contains(rendered, "(main)") {
+		t.Fatalf("projectInfo render = %q, want branch", rendered)
+	}
+	for _, token := range []string{"↑", "↓", "[", "]"} {
+		if strings.Contains(rendered, token) {
+			t.Fatalf("projectInfo rendered removed token %q in %q", token, rendered)
+		}
+	}
+}
+
+func TestProjectNameWidget(t *testing.T) {
+	w := projectNameWidget{}
+	ctx := &Context{
+		Stdin:  StdinInput{},
+		Config: Config{Theme: "default"},
+	}
+	ctx.Stdin.Workspace.CurrentDir = "/Users/alice/projects/cc-usage"
+	t.Setenv("PATH", "")
+
+	data, err := w.GetData(ctx)
+	if err != nil {
+		t.Fatalf("GetData returned error: %v", err)
+	}
+	if data == nil {
+		t.Fatal("GetData returned nil, want non-nil projectNameData")
+	}
+	d, ok := data.(*projectNameData)
+	if !ok {
+		t.Fatalf("GetData returned unexpected type %T", data)
+	}
+	if d.Name != "cc-usage" {
+		t.Fatalf("Name = %q, want %q", d.Name, "cc-usage")
+	}
+	if d.Branch != "" {
+		t.Fatalf("Branch = %q, want empty branch when git is unavailable", d.Branch)
+	}
+
+	rendered := stripANSI(w.Render(data, ctx))
+	if rendered != "cc-usage" {
+		t.Fatalf("Render = %q, want base name only", rendered)
+	}
+	for _, token := range []string{"~", "…", "/"} {
+		if strings.Contains(rendered, token) {
+			t.Fatalf("projectName rendered path marker %q in %q", token, rendered)
+		}
+	}
+
+	rendered = stripANSI(w.Render(&projectNameData{Name: "cc-usage", Branch: "main"}, ctx))
+	if rendered != "cc-usage (main)" {
+		t.Fatalf("Render with branch = %q, want %q", rendered, "cc-usage (main)")
+	}
+}
+
+func TestProjectNameGetDataSkipsWhenCwdUnknown(t *testing.T) {
+	w := projectNameWidget{}
+	origEnv := detectCwdEnv
+	origGetwd := detectCwdGetwd
+	defer func() {
+		detectCwdEnv = origEnv
+		detectCwdGetwd = origGetwd
+	}()
+
+	detectCwdEnv = func(key string) string { return "" }
+	detectCwdGetwd = func() (string, error) { return "", nil }
+
+	data, err := w.GetData(&Context{
+		Stdin:  StdinInput{},
+		Config: Config{Theme: "default"},
+	})
+	if err != nil {
+		t.Fatalf("GetData returned error: %v", err)
+	}
+	if data != nil {
+		t.Fatalf("GetData returned %v, want nil when cwd is unknown", data)
+	}
 }
 
 // TestProjectPathCompressHome covers the home-tilde compression branch of the

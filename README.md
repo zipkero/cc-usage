@@ -102,7 +102,7 @@ make build-local   # dist/cc-usage 생성
 | `theme` | `"default"` | 8개 테마 중 선택 |
 | `separator` | `"pipe"` | `"pipe"`, `"space"`, `"dot"`, `"arrow"` |
 | `disabledWidgets` | `[]` | 비활성화할 위젯 ID 목록 |
-| `preset` | - | 위젯 단축 문자열. 한 글자 = 한 위젯, `\|`로 줄 구분 (예: `"PMC$R"`) |
+| `preset` | - | 위젯 단축 문자열. 한 글자 = 한 위젯, `\|`로 줄 구분 (예: `"PMC$R"`, `"NMC$R"`) |
 | `lines` | - | 위젯 ID 배열의 배열로 직접 레이아웃 정의 (preset 대안) |
 
 ## Widgets
@@ -116,9 +116,11 @@ make build-local   # dist/cc-usage 생성
 | `cost` | `$` | 세션 비용 |
 | `rateLimit5h` | `R` | 5시간 rate limit |
 | `rateLimit7d` | `7` | 7일 rate limit |
-| `projectInfo` | `P` | 디렉토리 + git branch (+ worktree, subpath) |
+| `projectInfo` | `P` | 디렉토리 + git branch |
+| `projectName` | `N` | 현재 디렉토리 base name + git branch |
 
 > **preset 예시**: `"PMC$R"` → `projectInfo │ model │ context │ cost │ rateLimit5h`.
+> `"NMC$R"` → `projectName │ model │ context │ cost │ rateLimit5h`.
 > `disabledWidgets`로 일부만 꺼서 라인을 단순화할 수 있습니다.
 
 ## Troubleshooting
@@ -127,8 +129,8 @@ make build-local   # dist/cc-usage 생성
 
 Claude Code는 주기적으로 status line을 갱신하지 않고 이벤트 기반으로만 호출한다.
 `workspace.current_dir`가 비어있는 stdin이 오면 cc-usage는 `CLAUDE_PROJECT_DIR` 또는 현재 작업
-디렉터리를 사용해 `projectInfo`를 표시한다. 둘 다 확인할 수 없으면 이전 값을 복원하지 않고
-위젯을 생략한다.
+디렉터리를 사용해 `projectInfo` 또는 `projectName`을 표시한다. 둘 다 확인할 수 없으면 이전
+값을 복원하지 않고 위젯을 생략한다.
 
 ### 플러그인 업데이트 시 SSH 인증 오류 (Windows)
 
@@ -151,7 +153,7 @@ cc-usage는 외부 서버로 데이터를 전송하지 않는다.
 - **네트워크**: cc-usage는 네트워크 엔드포인트에 접속하지 않는다.
 - **저장**: status line 렌더 중 별도 캐시 파일을 읽거나 쓰지 않는다. 예전 버전이 만든
   `~/.cache/cc-usage/` 파일은 더 이상 사용하지 않으며 사용자가 직접 삭제할 수 있다.
-- **git**: `projectInfo` 표시를 위해 현재 작업 디렉터리에서 `git status --porcelain=v2 --branch`를 실행할 수 있다.
+- **git**: project 위젯 표시를 위해 현재 작업 디렉터리에서 `git status --porcelain=v2 --branch`를 실행할 수 있다.
 - **텔레메트리**: 없음.
 
 ## License
