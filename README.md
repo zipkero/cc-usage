@@ -124,9 +124,11 @@ chmod +x bin/run.sh bin/cc-usage-*   # macOS / Linux 만 해당
 | `cost` | `$` | 세션 비용 |
 | `rateLimit5h` | `R` | 5시간 rate limit |
 | `rateLimit7d` | `7` | 7일 rate limit |
-| `projectInfo` | `P` | 디렉토리 + git branch (+ worktree, subpath) |
+| `projectInfo` | `P` | 디렉토리 경로 + git branch |
+| `projectName` | `N` | 현재 디렉토리 base name + git branch |
 
 > **preset 예시**: `"PMC$R"` → `projectInfo │ model │ context │ cost │ rateLimit5h`.
+> `projectInfo`(전체 경로) 대신 `projectName`(프로젝트명만)을 쓰려면 `P`를 `N`으로 바꾸면 됩니다 (예: `"NMC$R"`).
 > `disabledWidgets`로 일부만 꺼서 라인을 단순화할 수 있습니다.
 
 ## Troubleshooting
