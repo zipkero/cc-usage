@@ -71,7 +71,8 @@ statusline이 표시하는 값이 Claude Code가 실제로 넘긴 의미와 일�
    stdout에 출력된다.
 2. `fast_mode`, `effort.level`, `thinking.enabled` 각각에 대응하는 위젯을 preset으로 켰을 때 그 값이 stdout에 나타나고, 해당 키가 없는
    stdin에서는 그 위젯이 출력에서 생략된다.
-3. 설정 파일이 없는 환경에서 실행했을 때 stdout의 위젯 구성이 이번 변경 전과 동일하다.
+3. 설정 파일이 없고 터미널 폭 제약이 걸리지 않는 환경에서 실행했을 때 stdout의 위젯 구성이 이번 변경 전과 동일하다.
+   폭 제약이 실제로 걸리는 환경에서는 7번이 우선한다 — 기본 구성을 그대로 내면 폭 조건을 만족할 수 없기 때문이다.
 4. `workspace.git_worktree`를 담은 stdin에서 project 계열 위젯이 worktree 정보를 반영해 출력하고, 그 키가 없으면 기존과 동일하게
    출력한다.
 5. `workspace.repo`와 `pr`을 담은 stdin에서 해당 정보가 stdout에 나타나고, 두 키가 모두 없는 stdin에서 관련 출력이 생략된다.

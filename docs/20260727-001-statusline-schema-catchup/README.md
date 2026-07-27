@@ -8,7 +8,7 @@ Claude Code status line 프로토콜의 현재 공식 스펙과 cc-usage 구현 
 
 ## 상태
 - [x] SPEC
-- [ ] ANALYSIS
+- [x] ANALYSIS
 - [ ] IMPLEMENT
 
 ## 문서
@@ -18,3 +18,4 @@ Claude Code status line 프로토콜의 현재 공식 스펙과 cc-usage 구현 
 
 ## 작업 히스토리
 - 2026-07-27: SPEC 작성
+- 2026-07-27: ANALYSIS 작성
