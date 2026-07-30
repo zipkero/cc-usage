@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -112,4 +113,61 @@ func TestRemovedPresetCharsAreUnmapped(t *testing.T) {
 			t.Fatalf("preset char %q maps to %q, want unmapped", ch, got)
 		}
 	}
+}
+
+// TestOrchestrateSessionStartLine locks the actual stdout line for the two
+// session-start moments SPEC §5.1-§5.4 describe: the first render (before
+// Claude Code's first API response) and the render right after that response
+// arrives for an account without rate_limits (rate_limits stays absent all
+// session for non-subscription accounts). Only context/cost/rateLimit5h/
+// rateLimit7d are on the line so projectInfo/projectName git lookups can't
+// affect it; PATH is cleared as a second guard against git subprocess calls.
+func TestOrchestrateSessionStartLine(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	baseConfig := Config{
+		Theme:       "default",
+		Separator:   "space",
+		DisplayMode: "custom",
+		Lines:       [][]string{{"context", "cost", "rateLimit5h", "rateLimit7d"}},
+	}
+
+	t.Run("first render: no rate_limits, total_input_tokens 0", func(t *testing.T) {
+		ctx := &Context{
+			Config:       baseConfig,
+			Translations: loadTranslations("en"),
+		}
+		ctx.Stdin.ContextWindow.ContextWindowSize = 200000
+
+		result := orchestrate(ctx)
+		if len(result.Lines) != 1 {
+			t.Fatalf("Lines = %v, want exactly one rendered line", result.Lines)
+		}
+
+		emptyBar := strings.Repeat("░", ctx.Config.ContextBarWidth())
+		want := emptyBar + " -  $0.00  5h: -  7d: -"
+		if got := stripANSI(result.Lines[0]); got != want {
+			t.Fatalf("line = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("after first response: total_input_tokens positive, no rate_limits", func(t *testing.T) {
+		ctx := &Context{
+			Config:       baseConfig,
+			Translations: loadTranslations("en"),
+		}
+		ctx.Stdin.ContextWindow.ContextWindowSize = 200000
+		ctx.Stdin.ContextWindow.TotalInputTokens = 50000
+		ctx.Stdin.ContextWindow.TotalOutputTokens = 10000
+
+		result := orchestrate(ctx)
+		if len(result.Lines) != 1 {
+			t.Fatalf("Lines = %v, want exactly one rendered line", result.Lines)
+		}
+
+		got := stripANSI(result.Lines[0])
+		if strings.Contains(got, "5h") || strings.Contains(got, "7d") {
+			t.Fatalf("line = %q, want no 5h/7d fragment when rate_limits stays absent after the first response", got)
+		}
+	})
 }

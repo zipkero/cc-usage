@@ -61,6 +61,11 @@ type contextWidget struct{}
 type contextData struct {
 	Percent     int
 	TotalTokens int
+	// Placeholder가 true면 첫 API 응답이 아직 도착하지 않은 상태다. zero
+	// value(false)가 "실측"을 뜻해야 한다 — 기존 리터럴 &contextData{Percent:
+	// ..., TotalTokens: ...} 4곳이 이 필드를 채우지 않고도 실측 케이스로
+	// 남아야 하기 때문이다(ANALYSIS §5 D2).
+	Placeholder bool
 }
 
 func (w contextWidget) ID() string { return "context" }
@@ -82,15 +87,29 @@ func (w contextWidget) GetData(ctx *Context) (any, error) {
 
 	totalTokens := cw.TotalInputTokens + cw.TotalOutputTokens
 
+	// placeholder 상태에서도 퍼센트·토큰 계산은 그대로 수행한다 — 표시하지
+	// 않을 뿐 값 산출 자체는 바꾸지 않는다(ANALYSIS §5 D2).
 	return &contextData{
 		Percent:     percent,
 		TotalTokens: totalTokens,
+		Placeholder: !ctx.FirstResponseReceived(),
 	}, nil
 }
 
 func (w contextWidget) Render(data any, ctx *Context) string {
 	d := data.(*contextData)
 	theme := getTheme(ctx.Config.Theme)
+
+	if d.Placeholder {
+		// 빈 bar + 흐린 placeholder 하나. 퍼센트·토큰 자리를 따로 두지
+		// 않는다 — 둘 다 같은 미측정에서 나온 값이라 나눠 보여주면 없는
+		// 정보를 두 번 표시하게 된다(ANALYSIS §5 D3). bar는 기존
+		// renderProgressBar(0, ...)를 그대로 쓰고 dim을 적용하지 않는다 —
+		// 빈 bar는 이미 BarEmpty 색으로 muted 상태다(ANALYSIS §5 D4/D6).
+		bar := renderProgressBar(0, ctx.Config.ContextBarWidth(), theme)
+		return fmt.Sprintf("%s %s", bar, renderDimmed(placeholderChar, theme))
+	}
+
 	bar := renderProgressBar(d.Percent, ctx.Config.ContextBarWidth(), theme)
 	color := getColorForPercent(d.Percent, theme)
 
@@ -135,6 +154,10 @@ type rateLimit5hWidget struct{}
 type rateLimitData struct {
 	Percent  int
 	ResetsAt time.Time
+	// Placeholder가 true면 이 rate limit이 아직 도착하지 않았고 첫 API
+	// 응답도 아직 오지 않은 상태다. zero value(false)가 "실측"을 뜻해야
+	// 한다 — contextData.Placeholder와 같은 극성이다(ANALYSIS §5 D2).
+	Placeholder bool
 }
 
 func (w rateLimit5hWidget) ID() string { return "rateLimit5h" }
@@ -147,7 +170,13 @@ func (w rateLimit5hWidget) GetData(ctx *Context) (any, error) {
 			ResetsAt: time.Unix(rl.ResetsAt, 0),
 		}, nil
 	}
-	return nil, nil
+	// 포인터가 없어도 첫 응답이 이미 도착했으면 지금처럼 칸을 생략한다 —
+	// rate_limits가 영구 부재인 비구독 계정에서 placeholder가 세션 내내
+	// 고착되는 것을 막는다(ANALYSIS §5 D1, D2).
+	if ctx.FirstResponseReceived() {
+		return nil, nil
+	}
+	return &rateLimitData{Placeholder: true}, nil
 }
 
 func (w rateLimit5hWidget) Render(data any, ctx *Context) string {
@@ -168,7 +197,10 @@ func (w rateLimit7dWidget) GetData(ctx *Context) (any, error) {
 			ResetsAt: time.Unix(rl.ResetsAt, 0),
 		}, nil
 	}
-	return nil, nil
+	if ctx.FirstResponseReceived() {
+		return nil, nil
+	}
+	return &rateLimitData{Placeholder: true}, nil
 }
 
 func (w rateLimit7dWidget) Render(data any, ctx *Context) string {
@@ -179,6 +211,15 @@ func (w rateLimit7dWidget) Render(data any, ctx *Context) string {
 func renderRateLimit(data any, label string, ctx *Context) string {
 	d := data.(*rateLimitData)
 	theme := getTheme(ctx.Config.Theme)
+
+	if d.Placeholder {
+		// 라벨 + ": " + placeholder 전체를 흐리게 감싼다 — rate limit
+		// placeholder는 값 한 글자만이 아니라 칸 전체를 dim으로 낸다는
+		// 점에서 context placeholder(bar는 dim 제외)와 다르다
+		// (ANALYSIS §5 D4). placeholder 상태에는 reset 시각이 없으므로
+		// formatTimeRemaining 경로를 타지 않는다(§5 D3).
+		return renderDimmed(fmt.Sprintf("%s: %s", label, placeholderChar), theme)
+	}
 
 	color := getColorForPercent(d.Percent, theme)
 	result := fmt.Sprintf("%s%s: %s%d%%%s", theme.Secondary, label, color, d.Percent, RESET)

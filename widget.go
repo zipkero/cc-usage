@@ -72,6 +72,17 @@ type Context struct {
 	Translations *Translations
 }
 
+// FirstResponseReceived reports whether Claude Code has returned the
+// session's first API response yet — the point at which context_window
+// and rate_limits stop being all-zero/absent placeholders and start
+// reflecting real usage. total_input_tokens > 0 is the only signal used:
+// rate_limits itself can't serve as a self-signal because it is permanently
+// absent for non-subscription accounts, so a widget that waits for its own
+// data to appear would stay in placeholder state for the whole session.
+func (c *Context) FirstResponseReceived() bool {
+	return c.Stdin.ContextWindow.TotalInputTokens > 0
+}
+
 // Widget is the interface all widgets must implement.
 type Widget interface {
 	ID() string

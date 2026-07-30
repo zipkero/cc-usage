@@ -120,6 +120,21 @@ func getTheme(name string) ThemeColors {
 	return themes["default"]
 }
 
+// placeholderChar stands in for a value that hasn't been measured yet
+// (before Claude Code's first API response). ASCII 범위의 표시폭 1칸 문자만
+// 쓴다 — East Asian Ambiguous 문자(예: em dash)는 터미널·폰트에 따라 표시폭이
+// 1칸/2칸으로 갈려 줄 폭 계산을 흔든다.
+const placeholderChar = "-"
+
+// renderDimmed wraps s in the theme's secondary foreground color plus the
+// dim (SGR 2 / faint) attribute, closing with a single RESET. 모든 테마의
+// Dim은 색이 아니라 SGR 속성이므로 Secondary 뒤에 RESET 없이 이어 붙이면
+// 전경색은 유지된 채 faint만 더해진다. context·rate limit 위젯의 placeholder
+// 표기가 이 조립을 공유한다.
+func renderDimmed(s string, theme ThemeColors) string {
+	return theme.Secondary + theme.Dim + s + RESET
+}
+
 func getColorForPercent(percent int, theme ThemeColors) string {
 	if percent <= 50 {
 		return theme.Safe
