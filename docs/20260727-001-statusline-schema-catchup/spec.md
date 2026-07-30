@@ -19,7 +19,8 @@ Claude Code status line 프로토콜의 현재 공식 스펙과 cc-usage의 실�
   적혀 있다.
 - stdin.go에 없는 필드: `fast_mode`, `effort.level`, `thinking.enabled`, `workspace.git_worktree`, `workspace.repo`, `pr`, `prompt_id`.
   이 중 `workspace.git_worktree`는 `--worktree` 세션에서만 채워지는 기존 `worktree.*`와 달리 일반 git worktree에서도 채워지므로,
-  `CLAUDE.md`에 적힌 "worktree는 일반적으로 비어있음" 한계를 대체한다.
+  `CLAUDE.md`에 적힌 "worktree는 일반적으로 비어있음" 한계를 대체한다. `fast_mode`와 `thinking`은 공식 문서의 조건부 부재 목록에 없어
+  항상 존재하며, 두 필드의 기본 상태는 서로 반대다 — fast mode는 `/fast`로 켜는 opt-in이고 extended thinking은 기본 켜짐이다.
 - 모델 기호 매핑에 `fable`·`mythos` 분기가 없어 해당 모델 ID가 기본 기호로 떨어진다. `Translations.Model`은 로드되지만 쓰이지 않는다.
 - v2.1.153부터 `COLUMNS`·`LINES` 환경변수로 터미널 크기를 읽을 수 있다. 현재는 config 값과 위젯 내부 상수가 폭을 추정한다.
 - 문서 Tips가 `session_id` 기반 캐시로 git 호출 비용을 줄이라고 권고한다. 현재는 매 실행마다 git 하위 프로세스를 띄운다.
@@ -45,7 +46,8 @@ statusline이 표시하는 값이 Claude Code가 실제로 넘긴 의미와 일�
 - **기본 출력 구성 불변.** 설정 파일이 없는 환경에서 출력되는 위젯 구성은 이번 변경 전과 같아야 한다. 새로 만드는 위젯은 기본 preset에
   넣지 않고 preset 문자 또는 `lines`로 켜는 opt-in으로 둔다. 이유: 현재 기본 6개에 3개가 더 붙으면 좁은 터미널에서 줄바꿈이 생기고,
   기존 사용자 화면이 업데이트만으로 바뀐다.
-- **캐시 대상 제한.** git 결과 캐시를 도입하되 캐시에 담는 것은 git 유래 정보(브랜치, ahead/behind)로 한정한다. `cost`·`rate_limits`처럼
+- **캐시 대상 제한.** git 결과 캐시를 도입하되 캐시에 담는 것은 git 유래 정보(브랜치)로 한정한다. ahead/behind는
+  `20260603-001-project-widget-split`이 파싱을 제거했으므로 캐시 대상이 아니다. `cost`·`rate_limits`처럼
   계정에 딸린 값은 캐시하지 않는다. 이유: 한 머신에서 여러 계정을 프로필로 나눠 쓰는 환경에서 한 계정의 수치가 다른 계정 화면에 남는
   경로를 원천 차단한다. 현재 cc-usage가 상태를 저장하지 않아 성립하는 성질이므로, 캐시 도입이 이 성질을 깨는 유일한 항목이다.
 - **누락 필드는 정상 경로.** 새로 수용하는 필드는 모두 조건부로 존재한다(`effort`는 모델이 지원할 때만, `pr`은 열린 PR이 있을 때만,
@@ -70,8 +72,11 @@ statusline이 표시하는 값이 Claude Code가 실제로 넘긴 의미와 일�
 1. `used_percentage`가 없는 stdin payload에 대해, 같은 payload에 `used_percentage`를 채워 넣은 경우와 동일한 컨텍스트 퍼센트가
    stdout에 출력된다.
 2. `fast_mode`, `effort.level`, `thinking.enabled` 각각에 대응하는 위젯을 preset으로 켰을 때 그 값이 stdout에 나타나고, 해당 키가 없는
-   stdin에서는 그 위젯이 출력에서 생략된다.
-3. 설정 파일이 없고 터미널 폭 제약이 걸리지 않는 환경에서 실행했을 때 stdout의 위젯 구성이 이번 변경 전과 동일하다.
+   stdin에서는 그 위젯이 출력에서 생략된다. 키가 있고 값이 `false`인 경우는 필드마다 다르다 — `fast_mode: false`에서는 위젯이 생략되고,
+   `thinking.enabled: false`에서는 꺼짐 상태가 표시된다. 근거는 두 필드의 기본 상태가 서로 반대라는 것이며 analysis §5 D3이 소유한다.
+3. 설정 파일이 없고 터미널 폭 제약이 걸리지 않는 환경에서 실행했을 때 stdout의 위젯 구성이 이 feature 착수 전과 동일하다. 기준선은
+   v0.5.6 — `20260730-001-session-start-placeholder`와 `20260730-003-stdin-resilience`가 반영된 상태이며, 첫 응답 전 5h·7d placeholder
+   칸이 나타나는 동작도 여기에 포함된다.
    폭 제약이 실제로 걸리는 환경에서는 7번이 우선한다 — 기본 구성을 그대로 내면 폭 조건을 만족할 수 없기 때문이다.
 4. `workspace.git_worktree`를 담은 stdin에서 project 계열 위젯이 worktree 정보를 반영해 출력하고, 그 키가 없으면 기존과 동일하게
    출력한다.

@@ -1,16 +1,5 @@
 # statusline-schema-catchup — ANALYSIS
 
-## 승인 전 확인
-
-- COLUMNS가 좁을 때 줄 오른쪽 위젯을 생략하는 축소 정책이 의도와 맞는지 확인. 좁은 터미널에서는
-  설정 파일이 없어도 기본 6개 중 뒤쪽(7d → 5h → cost)이 빠진 화면이 나온다. 관련 본문: §5 D7
-- context 위젯의 토큰 수 표시를 퍼센트와 같은 input-only 기준으로 함께 맞추는 채택이 의도와 맞는지
-  확인. 같은 세션에서 기존보다 작은 값이 표시된다(문서 예시 payload 기준 60K → 50K).
-  관련 본문: §5 D1
-- `fast_mode`·`thinking.enabled`가 `false`로 들어온 경우 해당 위젯을 표시하지 않는 채택이 의도와
-  맞는지 확인. 위젯을 preset으로 켠 사용자는 상태가 꺼져 있는 동안 아무것도 보지 못한다.
-  관련 본문: §5 D3
-
 ## 근거
 
 읽은 spec 범위: `spec.md` §1–§5 전체. 범위는 ① 새 stdin 필드의 수용·노출, ② 기존 위젯 계산·표기의
@@ -24,6 +13,21 @@ main이 전달한 공식 문서 조회 결과(`code.claude.com/docs/en/statuslin
 각 필드의 조건부 부재, `current_usage`의 세션 초반 `null`, v2.1.153의 `COLUMNS`/`LINES`, `session_id`
 기반 캐시 권고, `claude-fable-5`/`claude-mythos-5`의 실재. 이 항목들은 저장소 코드로 검증할 수 없으므로
 문서 조회 결과로만 인용한다.
+
+2026-07-30 재조회로 세션 상태 세 필드의 존재 조건과 기본값을 확정했다. 같은 문서의
+"Fields that may be absent" 목록에 `effort`·`workspace.repo`·`workspace.git_worktree`·`pr`·
+`rate_limits`·`worktree`·`vim`·`agent`·`session_name`·`prompt_id`가 들어 있고, **`fast_mode`와
+`thinking`은 그 목록에 없다** — 예시 payload에도 `"fast_mode": false`, `"thinking": {"enabled": true}`로
+나타난다. 즉 두 필드는 현행 Claude Code에서 항상 존재하고, `effort`만 "현재 모델이 effort 파라미터를
+지원할 때만" 조건부다. 기본값은 `code.claude.com/docs/en/costs.md`가 "Extended thinking is enabled by
+default"로, `code.claude.com/docs/en/fast-mode.md`가 `/fast`(또는 `"fastMode": true`)로 켜는 opt-in에
+Opus 5·4.8 한정·usage credits 필요·$10/$50 가격으로 규정한다. 두 필드의 기본 상태가 서로 반대라는
+사실이 §5 D3의 근거다. fast mode는 rate limit cooldown에서 표준 속도로 자동 강하하지만 그 상태를
+알리는 stdin 필드가 없다는 점도 같은 문서에서 확인했다.
+
+사용자 확인 결과(2026-07-30): §5 D1(context 토큰 표시를 input-only로 정합), §5 D7(COLUMNS 축소는 줄
+오른쪽부터)은 채택안 그대로 확정됐고, §5 D3은 "두 bool을 한 규칙으로 묶지 않는다"로 방향이 바뀌어
+아래 본문에 반영했다.
 
 코드에서 직접 확인한 사실:
 
@@ -39,10 +43,28 @@ main이 전달한 공식 문서 조회 결과(`code.claude.com/docs/en/statuslin
   `used_percentage`/`remaining_percentage`는 `*float64`다. `null` 입력을 별도 프로그램으로 재현해
   값 struct와 포인터 모두 디코드 오류 없이 zero/nil로 남는 것을 확인했다 — 새 필드도 같은 성질을
   쓸 수 있다.
-- context 위젯(`widgets_core.go:68`)은 `used_percentage`가 있으면 `clampPercent`로 절삭하고, 없으면
+- `parseStdinReader`는 더 이상 어떤 오류에서든 빈 입력을 돌리지 않는다(`20260730-003-stdin-resilience`).
+  최상위를 `map[string]json.RawMessage`로 받은 뒤 `stdinSectionTable`이 열거한 섹션마다 따로
+  `json.Unmarshal`하고, 실패한 섹션만 `reflect.Zero`로 되돌린 채 나머지를 살린다
+  (`stdin.go:114,149,207`). 빈 입력으로 떨어지는 경로는 최상위 JSON 자체가 깨진 경우 하나뿐이다.
+  새 필드를 추가할 때는 **`stdinSectionTable`에도 같은 최상위 키를 등재해야 한다** —
+  `TestStdinSectionTableCompleteness`가 struct 태그와 표를 양방향으로 대조하므로 빠뜨리면 테스트가
+  잡는다. `fast_mode`·`effort`·`thinking`·`pr`이 새 최상위 키이고, `workspace.*`는 기존 `workspace`
+  섹션 안이라 표 변경이 없다.
+- context 위젯(`widgets_core.go:73`)은 `used_percentage`가 있으면 `clampPercent`로 절삭하고, 없으면
   `TotalInputTokens + TotalOutputTokens`를 분자로 `calculatePercent`를 쓴다. 표시 토큰 수도 같은 합이다.
   실행으로 차이를 재현했다 — 같은 payload에서 `used_percentage` 부재 시 30%, `used_percentage: 25.0`
   주입 시 25%가 나온다(문서 예시 payload, `--config` 미존재 경로로 기본 설정 고정).
+- 같은 위젯에 placeholder 갈래가 생겼다(`20260730-001-session-start-placeholder`). `contextData`와
+  `rateLimitData`에 `Placeholder bool`이 붙어 있고 zero value가 "실측"을 뜻하며, `GetData`가 상태를
+  정하고 `Render`가 글리프를 정한다. rate limit 두 위젯은 대응 포인터가 nil이어도
+  `ctx.FirstResponseReceived()`가 false면 `&rateLimitData{Placeholder: true}`를 돌려 `5h: -` 칸을
+  유지한다(`widgets_core.go:179,206`). 즉 **"데이터가 없으면 위젯이 사라진다"는 더 이상 이 저장소의
+  단일 규약이 아니다** — 첫 응답 전에는 흐린 자리를 지키고, 첫 응답 뒤에만 사라진다.
+- 첫 응답 판정은 `Context.FirstResponseReceived()`이고 판정식은 `total_input_tokens > 0`이다.
+  D1이 context 퍼센트·토큰의 분자를 input 계열로 바꾸면 **표시 값의 분자와 placeholder 해제 신호가
+  같은 필드가 된다** — 실측 갈래가 나타나는 구간과 분자가 0이 아닌 구간이 정확히 일치해 `0%`를
+  표시하는 실측 화면이 생기지 않는다.
 - model 위젯 기호는 `strings.Contains(idLower, ...)` if/else 체인으로 opus `◆`/sonnet `◇`/haiku `○`,
   그 외 `●`다. `claude-fable-5`를 넣어 `●`로 떨어지는 것을 실행으로 확인했다. 표시 이름은 `d.ID`가
   우선이고 `DisplayName`은 ID가 빈 경우에만 쓴다.
@@ -95,7 +117,10 @@ main이 전달한 공식 문서 조회 결과(`code.claude.com/docs/en/statuslin
   현재 컨텍스트 값이라는 점을 output에만 적어 두어 input 쪽 의미 변경이 빠져 있다.
 - `README.md`의 Privacy는 "status line 렌더 중 별도 캐시 파일을 읽거나 쓰지 않는다"고 단정한다 —
   git 캐시 도입으로 거짓이 되는 문장이다. 위젯 표는 현재 7개 위젯을 등재한다.
-- 버전 현황: `Makefile` `VERSION := 0.5.4`, `.claude-plugin/plugin.json` `"version": "0.5.4"`.
+  같은 문장이 `ROADMAP.md` §서비스 완료 기준 6번에도 있었다 — 그 기준은 §5 D6의 결정에 따라
+  2026-07-30에 좁혔고, `README.md` 쪽 문장은 이 feature의 수정 대상으로 남아 있다.
+- 버전 현황: `Makefile` `VERSION := 0.5.6`, `.claude-plugin/plugin.json` `"version": "0.5.6"`
+  (M1·M2 배포 반영, 2026-07-30 확인).
 
 추정과 사실의 분리: 위젯 기호·preset 문자·캐시 TTL·표시폭 테이블 범위 같은 값은 spec이 요구를
 남기고 값을 열어둔 부분이라 본 analysis가 확정하는 설계값이며 근거가 아니다. `workspace.git_worktree`
@@ -139,9 +164,10 @@ main이 전달한 공식 문서 조회 결과(`code.claude.com/docs/en/statuslin
 
 1. `loadConfig(path)` — 경로는 `--config` 또는 `{CLAUDE_CONFIG_DIR or ~/.claude}/cc-usage.json`.
    새 config 키는 추가하지 않으므로 이 단계 동작은 불변이다.
-2. `parseStdin()` — 새 필드를 포함해 디코드한다. 디코드 실패는 기존대로 빈 입력으로 떨어지고,
-   개별 키 부재·`null`은 포인터 nil 또는 zero 값으로 남아 오류가 되지 않는다(SPEC §3의 누락 필드
-   정상 경로).
+2. `parseStdin()` — 새 필드를 포함해 디코드한다. 새 최상위 키(`fast_mode`·`effort`·`thinking`·`pr`)는
+   `stdinSectionTable`에 함께 등재해 섹션 단위 격리의 대상이 된다. 깨진 섹션은 그 섹션만 zero value로
+   버려지고 나머지 위젯은 계속 표시되며, 개별 키 부재·`null`은 포인터 nil 또는 zero 값으로 남아 오류가
+   되지 않는다(SPEC §3의 누락 필드 정상 경로).
 3. `loadTranslations()` — locale에서 `model` 블록이 사라지고 세션 상태 위젯 라벨이 들어온다.
 4. **터미널 폭 해석** — `COLUMNS`를 정수로 읽어 양수일 때만 `Context`에 싣는다. 없음·비수치·0 이하는
    전부 "제약 없음"으로 같게 취급한다.
@@ -151,10 +177,12 @@ main이 전달한 공식 문서 조회 결과(`code.claude.com/docs/en/statuslin
 7. `orchestrate` — 라인별로 위젯을 돌린다. 위젯별 데이터 경로:
    - context: `used_percentage`가 있으면 그 값, 없으면 **input 계열 합**을 분자로 계산한다. 분자는
      `total_input_tokens`를 우선하고 그것이 0이면 `current_usage`의 input·cache_creation·cache_read
-     합으로 보완한다. 표시 토큰 수도 같은 분자를 쓴다(SPEC §5.1).
+     합으로 보완한다. 표시 토큰 수도 같은 분자를 쓴다(SPEC §5.1). placeholder 갈래는 이 값을 표시하지
+     않으므로 분자 교정의 영향을 받지 않는다.
    - model: 소문자화한 ID를 기호 표와 순서대로 대조하고, 어디에도 걸리지 않으면 기본 기호(SPEC §5.6).
    - fastMode/effort/thinking: 대응 키가 nil이면 `GetData`가 nil을 돌려 orchestrator가 건너뛴다.
-     bool 계열은 값이 참일 때만 렌더한다(SPEC §5.2).
+     키가 있을 때는 `fastMode`만 참일 때 렌더하고, `thinking`·`effort`는 값을 그대로 렌더한다
+     (SPEC §5.2, §5 D3).
    - repoInfo/pullRequest: `workspace.repo`·`pr`가 nil이면 각각 skip. 둘 다 없으면 관련 출력이 전부
      사라진다(SPEC §5.5).
    - project 위젯: cwd 결정(stdin → `detectCurrentCwd()`) → **branch 조회(캐시 경유)** → worktree 키가
@@ -222,8 +250,10 @@ GetData(dir)
 
 수정 파일(탐색으로 확인한 직접 대상):
 
-- `stdin.go` — 새 필드 수용. 기존 필드 제거·개명 없음.
-- `widgets_core.go` — context 퍼센트·토큰 산출 교정, model 기호 표, 세션 상태 위젯 3개 신설과 등록.
+- `stdin.go` — 새 필드 수용과 `stdinSectionTable`에 새 최상위 키 4개(`fast_mode`·`effort`·`thinking`·`pr`)
+  등재. 기존 필드 제거·개명 없음.
+- `widgets_core.go` — context 퍼센트·토큰 산출 교정(실측 갈래만, placeholder 갈래는 불변),
+  model 기호 표, 세션 상태 위젯 3개 신설과 등록.
 - `widgets_project.go` — worktree 토큰 공유 렌더, branch 조회를 캐시 경유로 전환, repoInfo·
   pullRequest 위젯 신설과 등록(project 계열 파일에 둔다).
 - `widget.go` — `Context.Columns` 추가, `presetCharToWidget` 5개 추가, `Translations.Model` 제거,
@@ -237,8 +267,10 @@ GetData(dir)
   복사 전파되는 배포 산출물에 포함된다.
 - `CLAUDE.md` — 아키텍처 표(projectName 누락, ahead/behind 오기), 위젯 목록, 검증 명령의 없는 테스트
   이름, 동작 확인 예시 기대 출력, stdin 메모(총 input/output 의미), 캐시·COLUMNS 서술 추가(SPEC §5.10).
-- `README.md` — 위젯 표에 신규 5개와 preset 문자 추가, Privacy의 "캐시 파일을 읽거나 쓰지 않는다"
-  문장 교정. 이 문장은 이번 변경으로 사실과 어긋나므로 §5에 별도 조건이 없어도 함께 고친다.
+- `README.md` — 위젯 표에 신규 5개와 preset 문자 추가, `fastMode`의 "켜진 동안에만 표시" 명기.
+  Privacy의 "캐시 파일을 읽거나 쓰지 않는다" 문장 교정(§5 D11) — 이번 변경이 이 문장을 거짓으로 만든다.
+- `ROADMAP.md` — §서비스 완료 기준 6번과 M3 항목은 2026-07-30에 이미 갱신했다(D6 결정 반영).
+  이 feature의 코드 변경 대상은 아니다.
 - `Makefile` VERSION과 `.claude-plugin/plugin.json` version — 같은 새 값으로 동시 갱신(SPEC §5.11).
 
 직접·간접 의존(grep·실행으로 확인):
@@ -262,6 +294,14 @@ GetData(dir)
   이번 변경의 회귀 감지 장치 역할을 한다.
 - `widgets_core_test.go` — `splitContextRender`는 렌더 문자열을 공백 3분할로 가정한다. context 렌더
   포맷을 유지하므로 유효하다. bar 폭 케이스도 폭 결정 방식을 바꾸지 않으므로 유효하다.
+  `20260730-001-session-start-placeholder`가 추가한 placeholder 케이스는 토큰 수를 표시하지 않는 갈래이므로
+  D1의 분자 교정에 영향받지 않는다. 반대로 **실측 갈래를 검증하는 케이스는 기대값이 달라진다** — 리터럴
+  `&contextData{...}`로 데이터를 직접 넣는 렌더 케이스는 그대로지만, payload에서 `GetData`를 거치는
+  케이스(`stdin_test.go`의 `TestContextWidgetFractionalPercent` 계열)와 orchestrate 수준 줄 비교 케이스는
+  input-only 값으로 갱신해야 한다.
+- `stdin_test.go` — `TestStdinSectionTableCompleteness`가 `StdinInput`의 최상위 태그와
+  `stdinSectionTable`을 양방향으로 대조한다. 새 최상위 필드를 표에 등재하지 않으면 이 테스트가 실패한다 —
+  누락을 잡아주는 장치이므로 새 케이스를 만들 필요는 없다.
 - `widgets_project_test.go` — `t.Setenv("PATH", "")`로 git을 막는 케이스들이 캐시 파일에 오염되면
   안 된다. 이 테스트들은 `StdinInput{}`을 쓰므로 session_id가 비어 있고, session_id 없으면 캐시를
   아예 타지 않는 설계(§5 D6)에서 기존 케이스가 영향받지 않는다.
@@ -285,7 +325,12 @@ GetData(dir)
   얼마나 찼는가"를 나타내는 합에 들어갈 값이 아니고, A를 고르면 `25% 60K`처럼 사용자가 눈으로 검산할 수
   있는 두 수치가 서로 어긋난다. B는 `used_percentage`가 있는 payload와 없는 payload에서 퍼센트가 같아지고
   (SPEC §5.1) 토큰 수도 그 퍼센트와 같은 분자를 쓴다. 대가 — 같은 세션에서 기존보다 작은 토큰 수가
-  표시된다(문서 예시 payload 기준 60K → 50K). 이 사용자 체감 변화는 승인 전 확인 항목으로 올린다.
+  표시된다(문서 예시 payload 기준 `30% 60K` → `25% 50K`). 이 사용자 체감 변화는 2026-07-30에 사용자
+  확인을 받아 채택으로 확정했다.
+- 이전 턴의 모델 출력은 이미 분자에 들어 있다 — 다음 요청에서 input(대개 `cache_read_input_tokens`)으로
+  되돌아오고 `total_input_tokens`가 그 세 값의 합이기 때문이다. 즉 input-only는 output을 버리는 것이
+  아니라 **현재 턴 output을 미리 더하지 않는 것**이고, 그 값은 다음 턴에 input으로 편입된다. 지금
+  방식은 같은 토큰을 두 번 세는 구간을 만든다.
 - 분자 결정: `total_input_tokens`를 우선하고 0일 때만 `current_usage`의 input·cache_creation·cache_read
   합으로 보완한다. 근거 — 문서 조회 결과에서 `total_input_tokens`가 이미 그 세 값의 합이므로 통상 경로는
   덧셈 없이 끝나고, `current_usage`가 `null`인 세션 초반에도 zero 값으로 안전하게 0%가 된다(디코드
@@ -313,15 +358,38 @@ GetData(dir)
 
 - 옵션 A: 키가 있으면 항상 렌더하고 false는 꺼짐 표기로 보여준다.
 - 옵션 B: 참일 때만 렌더하고 false는 위젯 생략.
-- 채택: **B**. 근거 — 두 필드는 기본값에서 벗어난 상태를 알리는 신호이고, 이 저장소의 위젯은 데이터가
-  의미를 갖지 않을 때 사라지는 규약을 이미 따른다(rate limit, project 위젯). 꺼짐 표기는 항상 자리를
-  차지해 좁은 터미널에서 다른 위젯을 밀어낸다(D7과 직접 충돌). 대가 — 위젯을 켠 사용자가 상태가 꺼져
-  있는 동안 아무것도 못 보고 설정이 안 먹은 것으로 오해할 수 있다. 그래서 승인 전 확인 항목으로 올리고,
-  README 위젯 표에 "활성일 때만 표시"를 명기한다. `effort`는 꺼짐 개념이 없어 값이 있으면 항상 렌더한다.
+- 옵션 C: 필드마다 기본 상태를 보고 규칙을 따로 정한다.
+- 채택: **C** (2026-07-30 사용자 확인). `fast_mode`는 **참일 때만 렌더**하고, `thinking`은 **키가 있으면
+  항상 렌더**하며 on/off를 구별해 표시한다. `effort`는 꺼짐 개념이 없어 값이 있으면 항상 렌더한다.
+- 근거 — 두 bool의 **기본 상태가 서로 반대다**(§근거의 2026-07-30 재조회). `fast_mode`는 `/fast`로 켜는
+  opt-in에 Opus 5·4.8 한정·usage credits 필요·$10/$50 가격이라 켜진 것 자체가 알릴 값이고, 꺼짐이
+  압도적 다수인 상태다. `thinking`은 반대로 기본이 켜짐이고 Fable 5에서는 끌 수도 없다. 따라서 한 규칙
+  ("참일 때만 렌더")을 둘에 함께 적용하면 `thinking` 위젯은 거의 항상 "켜짐"만 보여주면서 정작 알릴 값이
+  있는 `false`를 숨기는 정반대 동작이 된다.
+- 원래 채택안(B)이 들었던 "데이터가 의미를 갖지 않으면 위젯이 사라진다"는 근거는 **더 이상 성립하지
+  않는다**. `20260730-001-session-start-placeholder` 이후 rate limit 위젯은 첫 응답 전에 `5h: -`로 흐린
+  자리를 지키고, 첫 응답 뒤에만 사라진다(§근거). 이 저장소의 현재 규약은 "사라진다"가 아니라 "부재를
+  구별해 표기한다"에 가깝고, 그 선례는 오히려 C를 지지한다.
+- 두 필드가 statusline.md의 "Fields that may be absent" 목록에 없다는 사실이 C의 무게를 더한다 —
+  SPEC §5.2 후단이 요구하는 "키가 없으면 위젯 생략"은 현행 Claude Code에서 도달하지 않는 경로이므로,
+  `false`를 어떻게 다루는지가 곧 실제 화면이다. B를 택하면 `fast_mode`·`thinking` 위젯을 켠 사용자가
+  대부분의 시간(fastMode)과 알릴 값이 있는 시점(thinking)에 아무것도 보지 못한다.
+- 대가 — `thinking` 위젯을 켜면 상태와 무관하게 칸 하나를 상시 점유한다. 좁은 터미널에서는 D7의 줄
+  맞춤이 흡수한다. `fastMode`는 반대로 꺼져 있는 동안 보이지 않으므로, 설정이 먹지 않은 것으로
+  오해하지 않도록 README 위젯 표에 "fast mode가 켜진 동안에만 표시"를 명기한다.
 - 라벨 방식 옵션: (a) 기호만, (b) locale 라벨 + 값. 채택 **(b)**. 근거 — 기호만으로는 세 상태를 구분해
   기억하기 어렵고, 폭 계산(D8)에서 East Asian Ambiguous·이모지 폭이 터미널마다 갈리는 기호를 늘리면
   SPEC §5.7 보장이 흔들린다. `effort.level` 값(low/medium/high/xhigh/max)과 `pr.review_state` 값은 시스템
   식별자이므로 번역하지 않고 그대로 쓴다.
+- 위젯별 조립: `fastMode`는 **라벨만** 낸다 — 존재 자체가 값을 나르므로 `fast: on`처럼 항상 같은 값을
+  덧붙이면 폭만 먹는다. `thinking`은 `<라벨>: on` / `<라벨>: off`로 값을 붙이고 on/off는 시스템 식별자로
+  번역하지 않는다. `effort`는 `<라벨>: <level>`이다. 색은 rate limit 실측 갈래와 같은 결
+  (`theme.Secondary` 라벨 + 기본색 값)로 두고 상태별 의미 색을 새로 배정하지 않는다 — `off`는 고장이
+  아니라 사용자가 고른 상태이며, `theme.Dim`은 placeholder가 "미측정"으로 이미 쓰고 있어 뜻이 겹친다.
+- 알 수 없는 상태 하나를 기록해 둔다: fast mode는 rate limit cooldown에서 표준 속도로 자동 강하하고
+  CLI는 `↯` 아이콘을 회색으로 바꿔 알리지만, 그 상태를 담은 stdin 필드가 없다. 따라서 cooldown 중에도
+  위젯은 켜짐으로 표시된다. stdin 밖 출처를 쓰지 않는다는 원칙(SPEC §3) 아래에서는 고칠 수 없는
+  한계이며, 라벨 옆 주석으로 남긴다.
 
 ### D4. worktree 정보의 배치와 git 호출 대체 여부
 
@@ -399,6 +467,15 @@ GetData(dir)
   위젯이 그것을 부른다. 근거 — `gitBranch`의 타임아웃·`(detached)`·실패 degrade 동작을 건드리지 않아
   기존 테스트가 그대로 유효하고, 캐시 유무가 branch 의미를 바꾸지 않는다. 한 프로세스에서 project 위젯을
   둘 다 켠 경우 두 번째 조회는 방금 쓴 값을 재사용해 파일 I/O도 한 번으로 끝난다.
+- `ROADMAP.md` §서비스 완료 기준 6번과의 충돌은 **기준을 좁히는 쪽으로 닫혔다**(2026-07-30 사용자 확인).
+  이전 문구는 "네트워크 엔드포인트에 접속하지 않고 **캐시 파일을 읽거나 쓰지 않으며**"였고, 이 D6과
+  SPEC §3·§5.8이 요구하는 git 캐시가 그 문장을 정면으로 어긋나게 만들었다. 대안은 캐시 도입을 이
+  feature에서 빼는 것이었으나, 그 기준이 실제로 막으려던 것은 계정 유래 값이 프로필 간에 남는 경로와
+  렌더 중 네트워크 접속이고 둘 다 이 캐시에서 성립하지 않는다 — 담기는 값이 git 유래 branch 하나로
+  닫혀 있고 네트워크를 타지 않는다. 좁힌 문구는 "계정 유래 값을 디스크에 저장하지 않으며, 디스크에 쓸 수
+  있는 것은 git으로 다시 얻을 수 있는 국소 파생값뿐"이다. **이 문구가 캐시 설계에 거는 조건은 하나** —
+  캐시가 유실·손상되면 표시가 git을 그대로 실행하는 경로로 되돌아가야 한다. 위의 무효화·미적중 처리가
+  이미 그 성질을 갖는다.
 
 ### D7. COLUMNS 반영 방식 — 측정 위치, 축소 순서, barWidth 우선순위
 
@@ -420,8 +497,9 @@ GetData(dir)
 - SPEC §5.3(설정 없는 환경의 구성 불변)과의 관계: 줄 맞춤은 COLUMNS가 실제로 제약이 될 때만 개입하므로,
   COLUMNS가 없거나 줄이 들어가는 환경에서는 출력이 이번 변경 전과 완전히 같다. 폭 제약이 실제로 걸리는
   환경에서는 §5.3이 §5.7에 양보한다는 우선순위가 spec §5.3 본문에 명시되어 있으므로, 좁은 터미널에서
-  뒤쪽 위젯이 사라지는 것은 두 조건을 함께 만족시키는 유일한 동작이다. 이 체감 변화는 승인 전 확인
-  항목으로 올린다.
+  뒤쪽 위젯이 사라지는 것은 두 조건을 함께 만족시키는 유일한 동작이다. 이 체감 변화는 2026-07-30에
+  사용자 확인을 받아 채택으로 확정했다 — 좁은 터미널에서 기본 6개 중 뒤쪽(7d → 5h → cost)이 빠진
+  화면이 나오는 것을 포함한다.
 - `LINES`는 소비하지 않는다. 근거 — SPEC §5.7은 가로 폭만 요구하고, 세로 제한은 줄 수를 줄이는
   별개 정책(어떤 줄을 버릴지)을 필요로 해 범위를 넘는다.
 
@@ -482,11 +560,12 @@ GetData(dir)
   총 input/output 의미를 문서 조회 결과에 맞춘다. 이번에 추가되는 캐시 파일과 COLUMNS 소비도 아키텍처·
   경로 서술에 넣는다 — 개발자 진실 layer가 외부 상태와 환경 입력을 빠뜨리면 다음 작업이 "상태 없음"을
   전제로 잘못된 판단을 한다.
-- `README.md`: 위젯 표에 신규 5개와 preset 문자를 넣고, Privacy의 "캐시 파일을 읽거나 쓰지 않는다"를
-  실제 동작(git 유래 정보만 담는 캐시를 쓰며 계정 관련 값은 저장하지 않음)으로 교정한다. §5에 조건이
-  없지만 이번 변경이 이 문장을 거짓으로 만들므로 같이 고친다.
-- 버전 옵션: (a) patch(0.5.5), (b) minor(0.6.0). 채택 **(b)**. 근거 — 새 위젯 다섯 개와 COLUMNS 반영,
-  캐시 도입은 버그 수정이 아닌 기능 추가이고 context 퍼센트·토큰 표기 의미도 바뀐다. `Makefile` VERSION과
+- `README.md`: 위젯 표에 신규 5개와 preset 문자를 넣고, `fastMode`에는 "fast mode가 켜진 동안에만 표시"를
+  명기한다(D3). Privacy의 "캐시 파일을 읽거나 쓰지 않는다"는 실제 동작(git 유래 정보만 담고 계정 관련
+  값은 저장하지 않으며, 캐시가 없어도 표시가 달라지지 않음)으로 교정한다 — `ROADMAP.md` §서비스 완료
+  기준 6번이 같은 방향으로 좁혀졌으므로(D6) 두 문서의 문구가 같은 성질을 가리켜야 한다.
+- 버전 옵션: (a) patch, (b) minor(0.6.0). 현재 값은 0.5.6이다. 채택 **(b)**. 근거 — 새 위젯 다섯 개와
+  COLUMNS 반영은 버그 수정이 아닌 기능 추가이고 context 퍼센트·토큰 표기 의미도 바뀐다. `Makefile` VERSION과
   `.claude-plugin/plugin.json` version에 같은 값을 넣어야 `/plugin` UI가 업데이트를 감지한다(SPEC §5.11).
   `bin/` 재빌드와 release 브랜치 동기화는 SPEC §5에 조건이 없는 배포 단계이며 CLAUDE.md §배포 절차가
   소유한다.
