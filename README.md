@@ -164,6 +164,11 @@ cc-usage는 외부 서버로 데이터를 전송하지 않는다.
 - **git**: project 위젯 표시를 위해 현재 작업 디렉터리에서 `git status --porcelain=v2 --branch`를 실행할 수 있다.
 - **텔레메트리**: 없음.
 
+## 문서
+
+- [ROADMAP.md](./ROADMAP.md) — 최종 결과물, 서비스 완료 기준, 마일스톤, 보류 범위
+- [CLAUDE.md](./CLAUDE.md) — 아키텍처, 위젯 추가 절차, 빌드·배포 절차
+
 ## License
 
 MIT
