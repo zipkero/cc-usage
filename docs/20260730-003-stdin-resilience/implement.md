@@ -109,7 +109,7 @@
       `./dist/cc-usage.exe --version` 출력 확인. `go test ./...` 실패 0, `go vet ./...` 통과.
   - 참조: SPEC §5.12, §5.13
 
-- [ ] task-006: main 반영 후 CI 3 러너 통과 확인과 release 브랜치 동기화
+- [x] task-006: main 반영 후 CI 3 러너 통과 확인과 release 브랜치 동기화
   - 목적: 이번 변경이 세 OS 러너에서 모두 성공한 상태로 기본 브랜치에 올라가고, marketplace로
     설치하는 사용자가 새 버전 바이너리를 받는다.
   - 접근: `Makefile`의 `build` 타깃과 같은 GOOS/GOARCH 조합·ldflags로 `go build`를 직접 돌려

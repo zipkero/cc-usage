@@ -10,7 +10,7 @@ stdin의 한 섹션이 깨져도 status line 전체가 사라지지 않게 한�
 ## 상태
 - [x] SPEC
 - [x] ANALYSIS
-- [ ] IMPLEMENT
+- [x] IMPLEMENT
 
 ## 문서
 - [spec.md](./spec.md)
@@ -21,3 +21,4 @@ stdin의 한 섹션이 깨져도 status line 전체가 사라지지 않게 한�
 - 2026-07-30: SPEC 작성
 - 2026-07-30: ANALYSIS 작성
 - 2026-07-30: IMPLEMENT 체크리스트 작성
+- 2026-07-30: task-001~006 구현·검증 완료 (v0.5.6, CI run 30517502258 세 러너 green)
