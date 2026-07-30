@@ -9,7 +9,7 @@ Windows에서만 실패하는 테스트 4개를 fixture 쪽에서 플랫폼 중�
 ## 상태
 - [x] SPEC
 - [x] ANALYSIS
-- [ ] IMPLEMENT
+- [x] IMPLEMENT
 
 ## 문서
 - [spec.md](./spec.md)
@@ -20,3 +20,4 @@ Windows에서만 실패하는 테스트 4개를 fixture 쪽에서 플랫폼 중�
 - 2026-07-30: SPEC 작성
 - 2026-07-30: ANALYSIS 작성
 - 2026-07-30: IMPLEMENT 체크리스트 작성
+- 2026-07-30: task-001~004 구현·검증 완료 (CI run 30513560712 세 러너 green)

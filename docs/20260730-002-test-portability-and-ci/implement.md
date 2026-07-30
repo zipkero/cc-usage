@@ -71,7 +71,7 @@
       step의 실제 성공은 이 선언 검사로 닫지 않고 원격 실행 관측에 맡긴다.
   - 참조: SPEC §5.6, §5.7 / ANALYSIS §5 F, G, H, I, J, K
 
-- [ ] task-004: 워크플로 실제 실행으로 세 러너 성공을 관측
+- [x] task-004: 워크플로 실제 실행으로 세 러너 성공을 관측
   - 목적: 이 feature의 변경이 `main`에 올라가 워크플로가 실제로 한 번 실행되고 ubuntu·macOS·
     Windows 세 러너가 모두 성공하며, 배포 버전 문자열은 이 feature 전후로 그대로다.
   - 접근: 이 feature의 변경(테스트 파일 2개 + 워크플로 + feature 문서)을 commit한 뒤 `main`에
