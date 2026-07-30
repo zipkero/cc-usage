@@ -206,7 +206,7 @@ func TestOrchestrateSectionIsolation(t *testing.T) {
 			t.Fatalf("Lines = %v, want exactly one rendered line", result.Lines)
 		}
 		got := stripANSI(result.Lines[0])
-		for _, want := range []string{"claude-opus-4-6", "30%", "60K", "$1.25"} {
+		for _, want := range []string{"claude-opus-4-6", "25%", "50K", "$1.25"} {
 			if !strings.Contains(got, want) {
 				t.Fatalf("line = %q, want it to contain %q", got, want)
 			}
@@ -274,7 +274,7 @@ func TestOrchestrateSectionIsolation(t *testing.T) {
 			t.Fatalf("Lines = %v, want exactly one rendered line", result.Lines)
 		}
 		got := stripANSI(result.Lines[0])
-		for _, want := range []string{"claude-opus-4-6", "30%", "60K", "$1.25"} {
+		for _, want := range []string{"claude-opus-4-6", "25%", "50K", "$1.25"} {
 			if !strings.Contains(got, want) {
 				t.Fatalf("line = %q, want it to contain %q", got, want)
 			}
@@ -309,7 +309,7 @@ func TestOrchestrateSectionIsolation(t *testing.T) {
 			t.Fatalf("Lines = %v, want exactly one rendered line", result.Lines)
 		}
 		got := stripANSI(result.Lines[0])
-		for _, want := range []string{"claude-opus-4-6", "30%", "60K", "$1.25", "5h: 42%", "7d: 69%"} {
+		for _, want := range []string{"claude-opus-4-6", "25%", "50K", "$1.25", "5h: 42%", "7d: 69%"} {
 			if !strings.Contains(got, want) {
 				t.Fatalf("line = %q, want it to contain %q", got, want)
 			}
@@ -346,7 +346,7 @@ func TestOrchestrateStdoutHasNoDiagnosticCharsForBrokenSections(t *testing.T) {
 	}
 	got := stripANSI(result.Lines[0])
 
-	for _, want := range []string{"claude-opus-4-6", "30%", "60K", "$0.00"} {
+	for _, want := range []string{"claude-opus-4-6", "25%", "50K", "$0.00"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("line = %q, want it to contain %q", got, want)
 		}

@@ -15,11 +15,6 @@ var localeKO []byte
 
 // Translations holds all translatable strings.
 type Translations struct {
-	Model struct {
-		Opus   string `json:"opus"`
-		Sonnet string `json:"sonnet"`
-		Haiku  string `json:"haiku"`
-	} `json:"model"`
 	Labels struct {
 		FiveH  string `json:"fiveH"`
 		SevenD string `json:"sevenD"`

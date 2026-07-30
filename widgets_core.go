@@ -27,18 +27,32 @@ func (w modelWidget) GetData(ctx *Context) (any, error) {
 	}, nil
 }
 
+// modelSymbolTable은 모델 ID 부분 문자열과 표시 기호를 판정 순서대로 담은 표다.
+// 위에서부터 순서대로 대조하고, 어디에도 걸리지 않으면 defaultModelSymbol을 쓴다.
+var modelSymbolTable = []struct {
+	substr string
+	symbol string
+}{
+	{"opus", "◆"},
+	{"sonnet", "◇"},
+	{"haiku", "○"},
+	{"fable", "◈"},
+	{"mythos", "◎"},
+}
+
+const defaultModelSymbol = "●"
+
 func (w modelWidget) Render(data any, ctx *Context) string {
 	d := data.(*modelData)
 	theme := getTheme(ctx.Config.Theme)
 
-	emoji := "●"
+	emoji := defaultModelSymbol
 	idLower := strings.ToLower(d.ID)
-	if strings.Contains(idLower, "opus") {
-		emoji = "◆"
-	} else if strings.Contains(idLower, "sonnet") {
-		emoji = "◇"
-	} else if strings.Contains(idLower, "haiku") {
-		emoji = "○"
+	for _, m := range modelSymbolTable {
+		if strings.Contains(idLower, m.substr) {
+			emoji = m.symbol
+			break
+		}
 	}
 
 	name := d.ID
@@ -52,6 +66,10 @@ func (w modelWidget) Render(data any, ctx *Context) string {
 // --- context widget ---
 
 const (
+	// input 계열로 정합한 뒤로는(ANALYSIS §5 D1) 이전보다 분자가 작아져 두
+	// 임계값의 발화 시점이 더 늦어진다 — 특히 200K 컨텍스트 모델에서는
+	// contextTokenWarn(256K)에 사실상 도달하지 못한다. SPEC §4가 재조정을
+	// 범위 밖으로 뒀으므로 값은 그대로 두고 사실만 기록해 둔다.
 	contextTokenWarn   = 256_000
 	contextTokenDanger = 512_000
 )
@@ -76,16 +94,24 @@ func (w contextWidget) GetData(ctx *Context) (any, error) {
 		return nil, nil
 	}
 
+	// Claude Code의 used_percentage는 input 계열(input + cache_creation +
+	// cache_read) 합만으로 계산되고 output은 포함하지 않는다 — 공식 문서가
+	// 명시한 공식이다. 실측 갈래의 분자도 같은 input 계열로 맞춰야 퍼센트와
+	// 옆에 붙는 토큰 수가 서로 다른 기준을 갖지 않는다(ANALYSIS §5 D1).
+	// total_input_tokens는 통상 이미 그 세 값의 합이므로 우선 쓰고, 0일 때만
+	// (예: current_usage가 null인 세션 초반) current_usage 합으로 보완한다.
+	totalTokens := cw.TotalInputTokens
+	if totalTokens == 0 {
+		totalTokens = cw.CurrentUsage.InputTokens + cw.CurrentUsage.CacheCreationInputTokens + cw.CurrentUsage.CacheReadInputTokens
+	}
+
 	var percent int
 	if cw.UsedPercentage != nil {
 		// Claude Code는 used_percentage를 소수(예: 8.4)로 보낼 수 있다 — clamp 후 정수 절삭.
 		percent = clampPercent(*cw.UsedPercentage)
 	} else {
-		total := cw.TotalInputTokens + cw.TotalOutputTokens
-		percent = calculatePercent(total, cw.ContextWindowSize)
+		percent = calculatePercent(totalTokens, cw.ContextWindowSize)
 	}
-
-	totalTokens := cw.TotalInputTokens + cw.TotalOutputTokens
 
 	// placeholder 상태에서도 퍼센트·토큰 계산은 그대로 수행한다 — 표시하지
 	// 않을 뿐 값 산출 자체는 바꾸지 않는다(ANALYSIS §5 D2).

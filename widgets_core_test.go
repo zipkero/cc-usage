@@ -147,6 +147,44 @@ func TestRenderProgressBarWidth(t *testing.T) {
 	}
 }
 
+// TestModelWidgetSymbol pins the substring→symbol table added in task-002:
+// each known model family keeps its existing symbol, the two new families
+// (fable/mythos) get distinct symbols of their own, and an ID matching no
+// entry falls back to defaultModelSymbol. It also confirms the pre-existing
+// display-name precedence (ID wins over DisplayName unless ID is empty).
+func TestModelWidgetSymbol(t *testing.T) {
+	w := modelWidget{}
+	ctx := newContextRenderCtx()
+
+	cases := []struct {
+		name        string
+		id          string
+		displayName string
+		wantSymbol  string
+		wantName    string
+	}{
+		{name: "opus keeps existing symbol", id: "claude-opus-4-6", wantSymbol: "◆", wantName: "claude-opus-4-6"},
+		{name: "sonnet keeps existing symbol", id: "claude-sonnet-5", wantSymbol: "◇", wantName: "claude-sonnet-5"},
+		{name: "haiku keeps existing symbol", id: "claude-haiku-4-5", wantSymbol: "○", wantName: "claude-haiku-4-5"},
+		{name: "fable gets its own symbol", id: "claude-fable-5", wantSymbol: "◈", wantName: "claude-fable-5"},
+		{name: "mythos gets its own symbol", id: "claude-mythos-5", wantSymbol: "◎", wantName: "claude-mythos-5"},
+		{name: "unknown id falls back to default symbol", id: "claude-unknown-9", wantSymbol: "●", wantName: "claude-unknown-9"},
+		{name: "empty id falls back to display name", id: "", displayName: "Custom Model", wantSymbol: "●", wantName: "Custom Model"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := stripANSI(w.Render(&modelData{ID: tc.id, DisplayName: tc.displayName}, ctx))
+			if !strings.HasPrefix(out, tc.wantSymbol+" ") {
+				t.Fatalf("Render(%q) = %q, want prefix %q", tc.id, out, tc.wantSymbol+" ")
+			}
+			if !strings.Contains(out, tc.wantName) {
+				t.Fatalf("Render(%q) = %q, want it to contain name %q", tc.id, out, tc.wantName)
+			}
+		})
+	}
+}
+
 // TestContextWidgetRender_TokenColor pins the token-color branching added
 // in task-001: token chunk is wrapped in theme.Warning at >=256K, in
 // theme.Danger at >=512K, and left bare below 256K. percent-color
