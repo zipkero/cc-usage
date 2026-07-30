@@ -31,23 +31,35 @@ func formatCost(cost float64) string {
 	return fmt.Sprintf("$%.2f", cost)
 }
 
-func formatTimeRemaining(resetAt time.Time, now time.Time, t *Translations) string {
-	diff := resetAt.Sub(now)
-	if diff <= 0 {
-		return "0" + t.Time.Minutes
+// formatTimeRemaining reports the remaining time until resetAt as a display
+// string and a bool telling the caller whether there is anything to show.
+// The bool is false — and the string empty — when resetAt is the Go zero
+// time (reset time unknown) or when the total whole minutes remaining is
+// <= 0 (already past, or less than 60 seconds away). The threshold is
+// int(diff.Minutes()) > 0 rather than diff > 0 so that sub-minute future
+// gaps stay suppressed, matching the previous "0"+Minutes behavior for that
+// window. Callers must use the bool, not the string contents, to decide
+// whether to display the suffix.
+func formatTimeRemaining(resetAt time.Time, now time.Time, t *Translations) (string, bool) {
+	if resetAt.IsZero() {
+		return "", false
 	}
+	diff := resetAt.Sub(now)
 	totalMinutes := int(diff.Minutes())
+	if totalMinutes <= 0 {
+		return "", false
+	}
 	days := totalMinutes / (60 * 24)
 	hours := (totalMinutes % (60 * 24)) / 60
 	minutes := totalMinutes % 60
 
 	if days > 0 {
-		return fmt.Sprintf("%d%s %d%s", days, t.Time.Days, hours, t.Time.Hours)
+		return fmt.Sprintf("%d%s %d%s", days, t.Time.Days, hours, t.Time.Hours), true
 	}
 	if hours > 0 {
-		return fmt.Sprintf("%d%s%d%s", hours, t.Time.Hours, minutes, t.Time.Minutes)
+		return fmt.Sprintf("%d%s%d%s", hours, t.Time.Hours, minutes, t.Time.Minutes), true
 	}
-	return fmt.Sprintf("%d%s", minutes, t.Time.Minutes)
+	return fmt.Sprintf("%d%s", minutes, t.Time.Minutes), true
 }
 
 func calculatePercent(current, total int) int {

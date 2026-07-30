@@ -160,6 +160,20 @@ type rateLimitData struct {
 	Placeholder bool
 }
 
+// resetsAtTime maps a raw resets_at epoch seconds value to a Go time.Time,
+// collapsing the "no reset time" encodings (0, or a negative value) into the
+// Go zero time so that rateLimitData.ResetsAt.IsZero() means "reset time
+// unknown" — instead of time.Unix(0, 0) (1970), which is never zero
+// (ANALYSIS §5 D6). A positive timestamp is passed through even when it is
+// already in the past; suppressing that case is formatTimeRemaining's job,
+// so its bool still has to be checked.
+func resetsAtTime(epochSeconds int64) time.Time {
+	if epochSeconds <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(epochSeconds, 0)
+}
+
 func (w rateLimit5hWidget) ID() string { return "rateLimit5h" }
 
 func (w rateLimit5hWidget) GetData(ctx *Context) (any, error) {
@@ -167,7 +181,7 @@ func (w rateLimit5hWidget) GetData(ctx *Context) (any, error) {
 		rl := ctx.Stdin.RateLimits.FiveHour
 		return &rateLimitData{
 			Percent:  clampPercent(rl.UsedPercentage),
-			ResetsAt: time.Unix(rl.ResetsAt, 0),
+			ResetsAt: resetsAtTime(rl.ResetsAt),
 		}, nil
 	}
 	// 포인터가 없어도 첫 응답이 이미 도착했으면 지금처럼 칸을 생략한다 —
@@ -194,7 +208,7 @@ func (w rateLimit7dWidget) GetData(ctx *Context) (any, error) {
 		rl := ctx.Stdin.RateLimits.SevenDay
 		return &rateLimitData{
 			Percent:  clampPercent(rl.UsedPercentage),
-			ResetsAt: time.Unix(rl.ResetsAt, 0),
+			ResetsAt: resetsAtTime(rl.ResetsAt),
 		}, nil
 	}
 	if ctx.FirstResponseReceived() {
@@ -225,8 +239,7 @@ func renderRateLimit(data any, label string, ctx *Context) string {
 	result := fmt.Sprintf("%s%s: %s%d%%%s", theme.Secondary, label, color, d.Percent, RESET)
 
 	if !d.ResetsAt.IsZero() {
-		remaining := formatTimeRemaining(d.ResetsAt, time.Now(), ctx.Translations)
-		if remaining != "0"+ctx.Translations.Time.Minutes {
+		if remaining, ok := formatTimeRemaining(d.ResetsAt, time.Now(), ctx.Translations); ok {
 			result += fmt.Sprintf(" %s(%s)%s", theme.Dim, remaining, RESET)
 		}
 	}

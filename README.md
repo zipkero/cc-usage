@@ -153,6 +153,29 @@ fatal: Could not read from remote repository.
 git config --global url."https://github.com/".insteadOf "git@github.com:"
 ```
 
+### stdin 섹션 하나가 예상과 다른 값으로 올 때의 표시 동작
+
+사라지지 않는다. 관용 단위는 **최상위 섹션**이다(`model`, `workspace`, `context_window`, `cost`,
+`rate_limits` 등). stdin의 섹션 하나가 예상과 다른 형태로 와도 그 섹션에서 나오는 칸만 빠지고
+나머지 섹션의 칸은 그대로 표시된다 — 예를 들어 `context_window`가 깨지면 context 칸만 생략되고
+model·cost 칸은 그대로 나온다. 섹션 안의 중첩 필드 하나만 깨진 경우에도 그 섹션 전체가 버려진다
+— `rate_limits.five_hour.used_percentage`에 숫자가 아닌 값이 오면 5h·7d 두 칸이 함께 빠지며,
+살아남은 절반으로 `5h: 0%` 같은 값을 만들어 보여주지 않는다. status line에는 실패를 알리는 문자나 마커가 전혀 나타나지 않는다.
+
+위젯마다 "빠진 자리"의 형태가 다를 수 있다는 점은 참고할 것. `cost` 섹션이 깨지면 칸이 생략되지
+않고 `$0.00`으로 표시되며, `context_window`가 깨지면 context 칸은 생략되지만 rate limit 데이터가
+오지 않는 계정에서는 5h·7d 칸이 `5h: -`처럼 placeholder로 나타난다(§Widgets 참고).
+
+어느 섹션이 버려졌는지는 `DEBUG=cc-usage`로 실행하면 stderr에서 확인할 수 있다. 알려진 섹션 목록에
+없는 최상위 키가 섞여 있어도 함께 기록된다.
+
+```bash
+DEBUG=cc-usage /path/to/dist/cc-usage < payload.json
+```
+
+단, **최상위 JSON 자체**가 구문 오류이거나 객체가 아닌 경우는 예외다 — 이때는 섹션 단위 관용의
+대상이 아니라 기존과 같이 아무것도 출력되지 않는다.
+
 ## Privacy
 
 cc-usage는 외부 서버로 데이터를 전송하지 않는다.

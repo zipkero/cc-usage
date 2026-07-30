@@ -171,3 +171,236 @@ func TestOrchestrateSessionStartLine(t *testing.T) {
 		}
 	})
 }
+
+// TestOrchestrateSectionIsolation locks the stdout line for stdin with
+// exactly one corrupted top-level section, per SPEC §5.1-§5.3: the widgets
+// fed by other sections keep rendering normally, and only the widget(s) fed
+// by the broken section disappear — no partial or placeholder value takes
+// their place. Follows TestOrchestrateSessionStartLine's PATH="" +
+// Separator + explicit Lines pattern so git subprocess calls can't affect
+// the line.
+func TestOrchestrateSectionIsolation(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	t.Run("rate_limits broken (SPEC §5.1): model/context/cost survive, 5h/7d drop", func(t *testing.T) {
+		in := parseStdinReader(strings.NewReader(`{
+			"model": {"id": "claude-opus-4-6", "display_name": "Opus"},
+			"workspace": {"current_dir": "/tmp"},
+			"context_window": {"total_input_tokens": 50000, "total_output_tokens": 10000, "context_window_size": 200000},
+			"cost": {"total_cost_usd": 1.25},
+			"rate_limits": {"five_hour": {"used_percentage": "high", "resets_at": 0}, "seven_day": {"used_percentage": 69, "resets_at": 0}}
+		}`))
+		ctx := &Context{
+			Stdin: in,
+			Config: Config{
+				Theme:       "default",
+				Separator:   "space",
+				DisplayMode: "custom",
+				Lines:       [][]string{{"model", "context", "cost", "rateLimit5h", "rateLimit7d"}},
+			},
+			Translations: loadTranslations("en"),
+		}
+
+		result := orchestrate(ctx)
+		if len(result.Lines) != 1 {
+			t.Fatalf("Lines = %v, want exactly one rendered line", result.Lines)
+		}
+		got := stripANSI(result.Lines[0])
+		for _, want := range []string{"claude-opus-4-6", "30%", "60K", "$1.25"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("line = %q, want it to contain %q", got, want)
+			}
+		}
+		if strings.Contains(got, "5h") || strings.Contains(got, "7d") {
+			t.Fatalf("line = %q, want no 5h/7d fragment when rate_limits is corrupted", got)
+		}
+	})
+
+	t.Run("context_window broken (SPEC §5.2): model/cost survive, context drops", func(t *testing.T) {
+		in := parseStdinReader(strings.NewReader(`{
+			"model": {"id": "claude-opus-4-6", "display_name": "Opus"},
+			"context_window": [1, 2, 3],
+			"cost": {"total_cost_usd": 1.25}
+		}`))
+		ctx := &Context{
+			Stdin: in,
+			Config: Config{
+				Theme:       "default",
+				Separator:   "space",
+				DisplayMode: "custom",
+				Lines:       [][]string{{"model", "context", "cost"}},
+			},
+			Translations: loadTranslations("en"),
+		}
+
+		result := orchestrate(ctx)
+		if len(result.Lines) != 1 {
+			t.Fatalf("Lines = %v, want exactly one rendered line", result.Lines)
+		}
+		if result.WidgetCount != 2 {
+			t.Fatalf("WidgetCount = %d, want 2 (model, cost only)", result.WidgetCount)
+		}
+		got := stripANSI(result.Lines[0])
+		for _, want := range []string{"claude-opus-4-6", "$1.25"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("line = %q, want it to contain %q", got, want)
+			}
+		}
+		if strings.Contains(got, "%") {
+			t.Fatalf("line = %q, want no percent fragment when context_window is corrupted", got)
+		}
+	})
+
+	t.Run("workspace broken (SPEC §5.3): model/context/cost survive", func(t *testing.T) {
+		in := parseStdinReader(strings.NewReader(`{
+			"model": {"id": "claude-opus-4-6", "display_name": "Opus"},
+			"workspace": "nope",
+			"context_window": {"total_input_tokens": 50000, "total_output_tokens": 10000, "context_window_size": 200000},
+			"cost": {"total_cost_usd": 1.25}
+		}`))
+		ctx := &Context{
+			Stdin: in,
+			Config: Config{
+				Theme:       "default",
+				Separator:   "space",
+				DisplayMode: "custom",
+				Lines:       [][]string{{"model", "context", "cost"}},
+			},
+			Translations: loadTranslations("en"),
+		}
+
+		result := orchestrate(ctx)
+		if len(result.Lines) != 1 {
+			t.Fatalf("Lines = %v, want exactly one rendered line", result.Lines)
+		}
+		got := stripANSI(result.Lines[0])
+		for _, want := range []string{"claude-opus-4-6", "30%", "60K", "$1.25"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("line = %q, want it to contain %q", got, want)
+			}
+		}
+	})
+
+	t.Run("scalar section broken (version): all other columns survive", func(t *testing.T) {
+		in := parseStdinReader(strings.NewReader(`{
+			"model": {"id": "claude-opus-4-6", "display_name": "Opus"},
+			"workspace": {"current_dir": "/tmp"},
+			"context_window": {"total_input_tokens": 50000, "total_output_tokens": 10000, "context_window_size": 200000},
+			"cost": {"total_cost_usd": 1.25},
+			"rate_limits": {"five_hour": {"used_percentage": 42, "resets_at": 0}, "seven_day": {"used_percentage": 69, "resets_at": 0}},
+			"version": 7
+		}`))
+		if in.Version != "" {
+			t.Fatalf("Version = %q, want zero value when the section is corrupted", in.Version)
+		}
+		ctx := &Context{
+			Stdin: in,
+			Config: Config{
+				Theme:       "default",
+				Separator:   "space",
+				DisplayMode: "custom",
+				Lines:       [][]string{{"model", "context", "cost", "rateLimit5h", "rateLimit7d"}},
+			},
+			Translations: loadTranslations("en"),
+		}
+
+		result := orchestrate(ctx)
+		if len(result.Lines) != 1 {
+			t.Fatalf("Lines = %v, want exactly one rendered line", result.Lines)
+		}
+		got := stripANSI(result.Lines[0])
+		for _, want := range []string{"claude-opus-4-6", "30%", "60K", "$1.25", "5h: 42%", "7d: 69%"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("line = %q, want it to contain %q", got, want)
+			}
+		}
+	})
+}
+
+// TestOrchestrateStdoutHasNoDiagnosticCharsForBrokenSections pins SPEC §5.7:
+// stdout for a payload with two corrupted sections and unknown top-level
+// keys (task-002's stderrBrokenSectionsPayload, defined in stdin_test.go)
+// carries no diagnostic marker — only the surviving widgets' values. cost
+// is corrupted (so it shows the existing "$0.00" degraded value per
+// ANALYSIS §2/D5 — this feature doesn't change that) and rate_limits is
+// corrupted (so 5h/7d are dropped outright, since context_window is valid
+// and FirstResponseReceived() is true).
+func TestOrchestrateStdoutHasNoDiagnosticCharsForBrokenSections(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	in := parseStdinReader(strings.NewReader(stderrBrokenSectionsPayload))
+	ctx := &Context{
+		Stdin: in,
+		Config: Config{
+			Theme:       "default",
+			Separator:   "space",
+			DisplayMode: "custom",
+			Lines:       [][]string{{"model", "context", "cost", "rateLimit5h", "rateLimit7d"}},
+		},
+		Translations: loadTranslations("en"),
+	}
+
+	result := orchestrate(ctx)
+	if len(result.Lines) != 1 {
+		t.Fatalf("Lines = %v, want exactly one rendered line", result.Lines)
+	}
+	got := stripANSI(result.Lines[0])
+
+	for _, want := range []string{"claude-opus-4-6", "30%", "60K", "$0.00"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("line = %q, want it to contain %q", got, want)
+		}
+	}
+	for _, unwanted := range []string{"5h", "7d", "corrupted", "unknown", "ignored", "cc-usage:"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("line = %q, must not contain diagnostic/dropped-section fragment %q", got, unwanted)
+		}
+	}
+}
+
+// TestOrchestrateStdoutUnaffectedByUnknownTopLevelKeys pins SPEC §5.5:
+// unknown top-level keys are silently ignored, so stdout for a payload with
+// stray keys mixed in matches stdout for the same payload without them.
+func TestOrchestrateStdoutUnaffectedByUnknownTopLevelKeys(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	basePayload := `{
+		"model": {"id": "claude-opus-4-6", "display_name": "Opus"},
+		"workspace": {"current_dir": "/tmp"},
+		"context_window": {"total_input_tokens": 50000, "total_output_tokens": 10000, "context_window_size": 200000},
+		"cost": {"total_cost_usd": 1.25},
+		"rate_limits": {"five_hour": {"used_percentage": 42, "resets_at": 0}, "seven_day": {"used_percentage": 69, "resets_at": 0}}
+	}`
+	withUnknownKeys := `{
+		"model": {"id": "claude-opus-4-6", "display_name": "Opus"},
+		"workspace": {"current_dir": "/tmp"},
+		"context_window": {"total_input_tokens": 50000, "total_output_tokens": 10000, "context_window_size": 200000},
+		"cost": {"total_cost_usd": 1.25},
+		"rate_limits": {"five_hour": {"used_percentage": 42, "resets_at": 0}, "seven_day": {"used_percentage": 69, "resets_at": 0}},
+		"zzz_unknown": true,
+		"aaa_unknown": {"nested": 1}
+	}`
+
+	newCtx := func(payload string) *Context {
+		return &Context{
+			Stdin: parseStdinReader(strings.NewReader(payload)),
+			Config: Config{
+				Theme:       "default",
+				Separator:   "space",
+				DisplayMode: "custom",
+				Lines:       [][]string{{"model", "context", "cost", "rateLimit5h", "rateLimit7d"}},
+			},
+			Translations: loadTranslations("en"),
+		}
+	}
+
+	base := orchestrate(newCtx(basePayload))
+	withUnknown := orchestrate(newCtx(withUnknownKeys))
+
+	if len(base.Lines) != 1 || len(withUnknown.Lines) != 1 {
+		t.Fatalf("Lines = %v / %v, want exactly one rendered line each", base.Lines, withUnknown.Lines)
+	}
+	if got, want := stripANSI(withUnknown.Lines[0]), stripANSI(base.Lines[0]); got != want {
+		t.Fatalf("stdout with unknown keys = %q, want same as without: %q", got, want)
+	}
+}

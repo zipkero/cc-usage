@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // newContextRenderCtx builds a minimal Context sufficient for
@@ -315,6 +316,93 @@ func TestRenderRateLimit_Placeholder(t *testing.T) {
 			}
 			if strings.Contains(stripped, "(") {
 				t.Fatalf("placeholder render should not have a remaining-time suffix: %q", stripped)
+			}
+		})
+	}
+}
+
+// TestRenderRateLimit_RemainingTimeSuffix pins the task-003 judgment move
+// from a display-string comparison to a time calculation (SPEC §5.8, §5.10;
+// ANALYSIS §5 D6, D7): R0 (resets_at absent/0, mapped by resetsAtTime to the
+// Go zero time) and R1 (past, or under 60 seconds away) both suppress the
+// "(...)" suffix exactly as before the change, and R2 (comfortably in the
+// future) shows it with the same string format as before.
+//
+// R2 offsets carry a 30s margin past the hour/day boundary (2h+30s, 3d+30s)
+// so that the render path's internal time.Now() call — which necessarily
+// runs a little later than this test's — cannot shave the elapsed time back
+// across the truncation boundary and flip the expected minute/hour digit.
+// R1's 59s-future case needs no such margin: any additional delay only
+// shrinks the remaining time further below the 60s display threshold, never
+// pushes it across into "shown".
+func TestRenderRateLimit_RemainingTimeSuffix(t *testing.T) {
+	trans := &Translations{}
+	trans.Time.Days = "d"
+	trans.Time.Hours = "h"
+	trans.Time.Minutes = "m"
+	ctx := &Context{Config: Config{Theme: "default"}, Translations: trans}
+
+	cases := []struct {
+		name       string
+		resetsAt   time.Time
+		wantSuffix bool
+		wantText   string // asserted only when wantSuffix
+	}{
+		{name: "R0 resets_at absent (zero time)", resetsAt: time.Time{}, wantSuffix: false},
+		{name: "R0 resets_at=0 (via resetsAtTime)", resetsAt: resetsAtTime(0), wantSuffix: false},
+		{name: "R1 past", resetsAt: time.Now().Add(-1 * time.Hour), wantSuffix: false},
+		{name: "R1 59s future", resetsAt: time.Now().Add(59 * time.Second), wantSuffix: false},
+		{name: "R2 2h future", resetsAt: time.Now().Add(2*time.Hour + 30*time.Second), wantSuffix: true, wantText: "2h0m"},
+		{name: "R2 3d future", resetsAt: time.Now().Add(3*24*time.Hour + 30*time.Second), wantSuffix: true, wantText: "3d 0h"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := stripANSI(renderRateLimit(&rateLimitData{Percent: 42, ResetsAt: tc.resetsAt}, "5h", ctx))
+
+			hasSuffix := strings.Contains(out, "(")
+			if hasSuffix != tc.wantSuffix {
+				t.Fatalf("suffix present = %v, want %v in %q", hasSuffix, tc.wantSuffix, out)
+			}
+			if tc.wantSuffix {
+				want := fmt.Sprintf("5h: 42%% (%s)", tc.wantText)
+				if out != want {
+					t.Fatalf("render = %q, want %q", out, want)
+				}
+			}
+		})
+	}
+}
+
+// TestFormatTimeRemainingLocaleInvariance pins SPEC §5.9: the suppress/show
+// judgment is unchanged by the Translations.Time.Minutes string, including
+// an empty string — because the judgment now comes from int(diff.Minutes())
+// in formatTimeRemaining rather than from comparing against a string built
+// from that same locale value (ANALYSIS §5 D7).
+func TestFormatTimeRemainingLocaleInvariance(t *testing.T) {
+	minutesLabels := []string{"m", "분", " minutes", ""}
+
+	for _, label := range minutesLabels {
+		trans := &Translations{}
+		trans.Time.Minutes = label
+		ctx := &Context{Config: Config{Theme: "default"}, Translations: trans}
+
+		t.Run(fmt.Sprintf("suppressed: absent, label=%q", label), func(t *testing.T) {
+			out := stripANSI(renderRateLimit(&rateLimitData{Percent: 10, ResetsAt: time.Time{}}, "5h", ctx))
+			if strings.Contains(out, "(") {
+				t.Fatalf("suffix should be suppressed regardless of Minutes label %q, got %q", label, out)
+			}
+		})
+		t.Run(fmt.Sprintf("suppressed: 59s future, label=%q", label), func(t *testing.T) {
+			out := stripANSI(renderRateLimit(&rateLimitData{Percent: 10, ResetsAt: time.Now().Add(59 * time.Second)}, "5h", ctx))
+			if strings.Contains(out, "(") {
+				t.Fatalf("suffix should be suppressed regardless of Minutes label %q, got %q", label, out)
+			}
+		})
+		t.Run(fmt.Sprintf("shown: 30m future, label=%q", label), func(t *testing.T) {
+			out := stripANSI(renderRateLimit(&rateLimitData{Percent: 10, ResetsAt: time.Now().Add(30 * time.Minute)}, "5h", ctx))
+			if !strings.Contains(out, "(") {
+				t.Fatalf("suffix should be shown regardless of Minutes label %q, got %q", label, out)
 			}
 		})
 	}
