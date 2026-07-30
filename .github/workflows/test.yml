@@ -1,0 +1,39 @@
+name: Go vet and test
+
+on:
+  push:
+    branches:
+      - main
+  # Filters the PR's base branch. The GitHub default branch is `release`, an
+  # orphan branch holding only prebuilt binaries — without this filter every
+  # release-base PR would run these steps against a tree that has no Go module.
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  vet-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: go test ./...

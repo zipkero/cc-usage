@@ -52,6 +52,17 @@ func TestShouldSuppressOutput(t *testing.T) {
 	})
 }
 
+// setHomeEnv overrides the test process's home directory for both POSIX and
+// Windows. os.UserHomeDir() reads exactly one env var per GOOS (HOME on
+// unix, USERPROFILE on windows) and never both, so setting only one leaves
+// the other GOOS resolving to the real home. Setting both to the same value
+// is safe on every GOOS since the two keys are never consulted together.
+func setHomeEnv(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+}
+
 func TestConfigHomeDir(t *testing.T) {
 	t.Run("CLAUDE_CONFIG_DIR wins", func(t *testing.T) {
 		dir := t.TempDir()
@@ -72,7 +83,7 @@ func TestConfigHomeDir(t *testing.T) {
 	t.Run("defaultConfigPath uses CLAUDE_CONFIG_DIR", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("CLAUDE_CONFIG_DIR", dir)
-		t.Setenv("HOME", t.TempDir())
+		setHomeEnv(t, t.TempDir())
 		want := filepath.Join(dir, "cc-usage.json")
 		if got := defaultConfigPath(); got != want {
 			t.Fatalf("defaultConfigPath() = %q, want %q", got, want)
@@ -82,7 +93,7 @@ func TestConfigHomeDir(t *testing.T) {
 	t.Run("defaultConfigPath falls back to home", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("CLAUDE_CONFIG_DIR", "")
-		t.Setenv("HOME", home)
+		setHomeEnv(t, home)
 		want := filepath.Join(home, ".claude", "cc-usage.json")
 		if got := defaultConfigPath(); got != want {
 			t.Fatalf("defaultConfigPath() = %q, want %q", got, want)

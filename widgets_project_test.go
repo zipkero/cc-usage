@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -253,7 +254,11 @@ func TestProjectNameGetDataSkipsWhenCwdUnknown(t *testing.T) {
 // projectInfo path display helper (SPEC §5.1, §5.2). All inputs are
 // deterministic strings — no os.UserHomeDir / wall-clock dependency.
 func TestProjectPathCompressHome(t *testing.T) {
-	const home = "/Users/alice"
+	// compressHome matches prefixes against filepath.Separator, so home must
+	// carry the OS-native separator. Paths under it are joined from the
+	// already-normalized home so they cannot drift from it.
+	home := filepath.FromSlash("/Users/alice")
+	homeProjectsPath := filepath.Join(home, "projects", "cc-usage")
 
 	cases := []struct {
 		name    string
@@ -269,9 +274,9 @@ func TestProjectPathCompressHome(t *testing.T) {
 		},
 		{
 			name:    "current under home gets tilde prefix",
-			current: home + "/projects/cc-usage",
+			current: homeProjectsPath,
 			home:    home,
-			want:    "~/projects/cc-usage",
+			want:    filepath.FromSlash("~/projects/cc-usage"),
 		},
 		{
 			name:    "current outside home stays absolute",
@@ -281,9 +286,9 @@ func TestProjectPathCompressHome(t *testing.T) {
 		},
 		{
 			name:    "empty home (lookup failure) keeps absolute path",
-			current: home + "/projects/cc-usage",
+			current: homeProjectsPath,
 			home:    "",
-			want:    home + "/projects/cc-usage",
+			want:    homeProjectsPath,
 		},
 	}
 
@@ -312,13 +317,15 @@ func TestProjectPathShrink(t *testing.T) {
 	// Long tilde path: 5 middle segments + base, total runes > 50. The
 	// minimal collapsed form "~/…/<base>" must fit within the budget so we
 	// observe the shrink branch (not the bust-budget fallback).
-	longTildePath := "~/aaaaaaaa/bbbbbbbb/cccccccc/dddddddd/eeeeeeee/proj"
+	// FromSlash adapts to the OS separator. It is the identity when
+	// Separator == '/', so POSIX behavior and the rune count stay unchanged.
+	longTildePath := filepath.FromSlash("~/aaaaaaaa/bbbbbbbb/cccccccc/dddddddd/eeeeeeee/proj")
 	if utf8.RuneCountInString(longTildePath) <= max {
 		t.Fatalf("precondition: longTildePath must be > %d runes, got %d", max, utf8.RuneCountInString(longTildePath))
 	}
 
 	// Long absolute (outside home) path > 50 runes, collapses to "/…/<base>".
-	longAbsPath := "/var/aaaaaaaa/bbbbbbbb/cccccccc/dddddddd/eeeeeeee/proj"
+	longAbsPath := filepath.FromSlash("/var/aaaaaaaa/bbbbbbbb/cccccccc/dddddddd/eeeeeeee/proj")
 	if utf8.RuneCountInString(longAbsPath) <= max {
 		t.Fatalf("precondition: longAbsPath must be > %d runes, got %d", max, utf8.RuneCountInString(longAbsPath))
 	}
@@ -343,12 +350,12 @@ func TestProjectPathShrink(t *testing.T) {
 		{
 			name: "tilde path over budget collapses middle to ellipsis",
 			in:   longTildePath,
-			want: "~/…/proj",
+			want: filepath.FromSlash("~/…/proj"),
 		},
 		{
 			name: "absolute path over budget keeps leading separator",
 			in:   longAbsPath,
-			want: "/…/proj",
+			want: filepath.FromSlash("/…/proj"),
 		},
 		{
 			name: "base name alone exceeding budget is returned as-is",
