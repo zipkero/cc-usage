@@ -128,10 +128,10 @@ chmod +x bin/run.sh bin/cc-usage-*   # macOS / Linux 만 해당
 | ID | preset char | 설명 |
 |----|:-:|------|
 | `model` | `M` | 모델명 + 아이콘 (◆Opus/◇Sonnet/○Haiku) |
-| `context` | `C` | 프로그레스바 + 사용률 + 토큰 수 |
+| `context` | `C` | 프로그레스바 + 사용률 + 토큰 수 (첫 응답 전에는 빈 bar + `-`로 표시) |
 | `cost` | `$` | 세션 비용 |
-| `rateLimit5h` | `R` | 5시간 rate limit |
-| `rateLimit7d` | `7` | 7일 rate limit |
+| `rateLimit5h` | `R` | 5시간 rate limit (첫 응답 전에는 `5h: -`로 자리를 지키며, rate limit 데이터가 오지 않는 계정에서는 첫 응답 이후 칸이 생략됨) |
+| `rateLimit7d` | `7` | 7일 rate limit (첫 응답 전에는 `7d: -`로 자리를 지키며, rate limit 데이터가 오지 않는 계정에서는 첫 응답 이후 칸이 생략됨) |
 | `projectInfo` | `P` | 디렉토리 경로 + git branch |
 | `projectName` | `N` | 현재 디렉토리 base name + git branch |
 
