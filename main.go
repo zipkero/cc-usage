@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -39,6 +40,20 @@ func defaultConfigPath() string {
 	return filepath.Join(configHomeDir(home), "cc-usage.json")
 }
 
+// parseColumns interprets the COLUMNS environment variable as a terminal
+// width in display columns. Parse failure, non-positive values, and unset
+// (empty string) all collapse to the same "no width constraint" result (0) —
+// SPEC §5.3 requires stdout to stay byte-identical to pre-task-009 output
+// whenever COLUMNS doesn't carry a genuine positive width, so none of these
+// cases can be distinguished downstream (ANALYSIS §5 D7).
+func parseColumns(raw string) int {
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
 func main() {
 	configPath := flag.String("config", defaultConfigPath(), "config path")
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -64,6 +79,7 @@ func main() {
 		Stdin:        input,
 		Config:       cfg,
 		Translations: translations,
+		Columns:      parseColumns(os.Getenv("COLUMNS")),
 	}
 
 	if shouldSuppressOutput(ctx.Stdin) {

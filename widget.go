@@ -68,6 +68,11 @@ type Context struct {
 	Stdin        StdinInput
 	Config       Config
 	Translations *Translations
+	// Columns is the terminal width in display columns, or 0 for "no
+	// constraint" (unset/unparsable/non-positive COLUMNS — main.go's
+	// parseColumns collapses all of those to 0). No widget reads this field —
+	// the only consumer is orchestrate()'s line-fitting step (ANALYSIS §3).
+	Columns int
 }
 
 // FirstResponseReceived reports whether Claude Code has returned the
@@ -205,10 +210,22 @@ func orchestrate(ctx *Context) OrchestrateResult {
 			}
 			parts = append(parts, rendered)
 		}
-		if len(parts) > 0 {
-			result.WidgetCount += len(parts)
-			result.Lines = append(result.Lines, strings.Join(parts, sep))
+		if len(parts) == 0 {
+			continue
 		}
+		if ctx.Columns > 0 {
+			// Width fitting only ever engages when Columns carries a real
+			// constraint — leaving the Columns<=0 branch as the untouched
+			// strings.Join keeps stdout byte-identical to pre-task-009
+			// output whenever COLUMNS is unset/unparsable/non-positive
+			// (SPEC §5.3, §5.7; ANALYSIS §5 D7).
+			fitted, count := fitLineWidth(parts, sep, ctx.Columns)
+			result.WidgetCount += count
+			result.Lines = append(result.Lines, fitted)
+			continue
+		}
+		result.WidgetCount += len(parts)
+		result.Lines = append(result.Lines, strings.Join(parts, sep))
 	}
 	return result
 }

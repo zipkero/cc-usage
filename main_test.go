@@ -100,3 +100,28 @@ func TestConfigHomeDir(t *testing.T) {
 		}
 	})
 }
+
+// TestParseColumns locks task-009's rule that unset, unparsable, and
+// non-positive COLUMNS values all collapse to 0 ("no constraint") — SPEC
+// §5.3 requires none of these to trigger width fitting.
+func TestParseColumns(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want int
+	}{
+		{"unset (empty string)", "", 0},
+		{"non-numeric", "wide", 0},
+		{"zero", "0", 0},
+		{"negative", "-80", 0},
+		{"positive", "80", 80},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := parseColumns(c.raw); got != c.want {
+				t.Fatalf("parseColumns(%q) = %d, want %d", c.raw, got, c.want)
+			}
+		})
+	}
+}
