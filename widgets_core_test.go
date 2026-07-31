@@ -497,3 +497,124 @@ func TestFastModeWidgetRender(t *testing.T) {
 		t.Fatalf("Render = %q, want %q", out, "fast")
 	}
 }
+
+// TestThinkingWidgetGetData pins task-004's "render whenever the key is
+// present" rule (ANALYSIS §5 D3): unlike fastMode, thinking defaults to on,
+// so both true and false render — only a nil pointer (key absent) omits the
+// widget.
+func TestThinkingWidgetGetData(t *testing.T) {
+	w := thinkingWidget{}
+
+	cases := []struct {
+		name     string
+		thinking *struct {
+			Enabled bool `json:"enabled"`
+		}
+		wantNil bool
+	}{
+		{name: "key absent (nil) omits widget", thinking: nil, wantNil: true},
+		{name: "enabled false still renders", thinking: &struct {
+			Enabled bool `json:"enabled"`
+		}{Enabled: false}, wantNil: false},
+		{name: "enabled true renders", thinking: &struct {
+			Enabled bool `json:"enabled"`
+		}{Enabled: true}, wantNil: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := &Context{Stdin: StdinInput{Thinking: tc.thinking}}
+
+			data, err := w.GetData(ctx)
+			if err != nil {
+				t.Fatalf("GetData returned error: %v", err)
+			}
+			if tc.wantNil && data != nil {
+				t.Fatalf("GetData = %v, want nil", data)
+			}
+			if !tc.wantNil && data == nil {
+				t.Fatalf("GetData = nil, want non-nil")
+			}
+		})
+	}
+}
+
+// TestThinkingWidgetRender pins the "<label>: on|off" assembly (ANALYSIS §5
+// D3) — on/off are system identifiers and stay untranslated regardless of
+// locale.
+func TestThinkingWidgetRender(t *testing.T) {
+	w := thinkingWidget{}
+	ctx := &Context{
+		Config:       Config{Theme: "default"},
+		Translations: loadTranslations("en"),
+	}
+
+	cases := []struct {
+		enabled bool
+		want    string
+	}{
+		{enabled: true, want: "think: on"},
+		{enabled: false, want: "think: off"},
+	}
+	for _, tc := range cases {
+		out := stripANSI(w.Render(tc.enabled, ctx))
+		if out != tc.want {
+			t.Fatalf("Render(%v) = %q, want %q", tc.enabled, out, tc.want)
+		}
+	}
+}
+
+// TestEffortWidgetGetData pins task-004's "no off concept" rule (ANALYSIS §5
+// D3): the widget renders only when effort.level is a non-empty string. A
+// nil pointer (key absent) and an empty level both omit the widget.
+func TestEffortWidgetGetData(t *testing.T) {
+	w := effortWidget{}
+
+	cases := []struct {
+		name    string
+		effort  *struct{ Level string }
+		wantNil bool
+	}{
+		{name: "key absent (nil) omits widget", effort: nil, wantNil: true},
+		{name: "empty level omits widget", effort: &struct{ Level string }{Level: ""}, wantNil: true},
+		{name: "non-empty level renders", effort: &struct{ Level string }{Level: "high"}, wantNil: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := &Context{}
+			if tc.effort != nil {
+				ctx.Stdin.Effort = &struct {
+					Level string `json:"level"`
+				}{Level: tc.effort.Level}
+			}
+
+			data, err := w.GetData(ctx)
+			if err != nil {
+				t.Fatalf("GetData returned error: %v", err)
+			}
+			if tc.wantNil && data != nil {
+				t.Fatalf("GetData = %v, want nil", data)
+			}
+			if !tc.wantNil && data == nil {
+				t.Fatalf("GetData = nil, want non-nil")
+			}
+		})
+	}
+}
+
+// TestEffortWidgetRender pins the "<label>: <level>" assembly (ANALYSIS §5
+// D3) — level is a system identifier (low/medium/high/xhigh/max) and stays
+// untranslated regardless of locale.
+func TestEffortWidgetRender(t *testing.T) {
+	w := effortWidget{}
+	ctx := &Context{
+		Config:       Config{Theme: "default"},
+		Translations: loadTranslations("en"),
+	}
+
+	out := stripANSI(w.Render("xhigh", ctx))
+	if out != "effort: xhigh" {
+		t.Fatalf("Render = %q, want %q", out, "effort: xhigh")
+	}
+}

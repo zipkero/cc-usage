@@ -1,4 +1,4 @@
 {
-  "labels": { "fiveH": "5시간", "sevenD": "7일", "fastMode": "고속" },
+  "labels": { "fiveH": "5시간", "sevenD": "7일", "fastMode": "고속", "thinking": "사고", "effort": "노력" },
   "time": { "days": "일", "hours": "시간", "minutes": "분", "seconds": "초" }
 }

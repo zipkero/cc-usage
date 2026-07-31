@@ -1,4 +1,4 @@
 {
-  "labels": { "fiveH": "5h", "sevenD": "7d", "fastMode": "fast" },
+  "labels": { "fiveH": "5h", "sevenD": "7d", "fastMode": "fast", "thinking": "think", "effort": "effort" },
   "time": { "days": "d", "hours": "h", "minutes": "m", "seconds": "s" }
 }

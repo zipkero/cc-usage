@@ -19,6 +19,8 @@ type Translations struct {
 		FiveH    string `json:"fiveH"`
 		SevenD   string `json:"sevenD"`
 		FastMode string `json:"fastMode"`
+		Thinking string `json:"thinking"`
+		Effort   string `json:"effort"`
 	} `json:"labels"`
 	Time struct {
 		Days    string `json:"days"`
@@ -118,6 +120,10 @@ var presetCharToWidget = map[byte]string{
 	// 사용자에게 다른 위젯이 되살아나 보이고 그 회귀 가드도 무력해진다
 	// (ANALYSIS §5 D2).
 	'f': "fastMode",
+	// thinking·effort는 각각 T·E다. 기존 점유(M C $ R 7 P N f)와 제거된
+	// 위젯의 금지 집합(S V a D B H F) 어디와도 겹치지 않는다(ANALYSIS §5 D2).
+	'T': "thinking",
+	'E': "effort",
 }
 
 // resolvePreset parses Config.Preset into Config.Lines.

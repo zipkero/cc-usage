@@ -79,6 +79,19 @@ type StdinInput struct {
 	// (ANALYSIS §5 D3).
 	FastMode *bool `json:"fast_mode,omitempty"`
 
+	// Thinking도 부재와 값을 구분해야 하므로 포인터로 받는다 — fast_mode와
+	// 반대로 extended thinking은 기본이 켜짐이라, 위젯은 키가 있으면 항상
+	// 렌더하고 Enabled의 true/false를 그대로 구별해 보여준다(ANALYSIS §5 D3).
+	Thinking *struct {
+		Enabled bool `json:"enabled"`
+	} `json:"thinking,omitempty"`
+
+	// Effort는 꺼짐 개념이 없어 값이 있으면 항상 렌더한다. 포인터로 받는 이유는
+	// 다른 신규 필드와 같은 부재 구분 목적이다(ANALYSIS §5 D3).
+	Effort *struct {
+		Level string `json:"level"`
+	} `json:"effort,omitempty"`
+
 	Exceeds200kTokens bool   `json:"exceeds_200k_tokens,omitempty"`
 	TranscriptPath    string `json:"transcript_path,omitempty"`
 	Version           string `json:"version"`
@@ -127,6 +140,8 @@ func stdinSectionTable(input *StdinInput) []stdinSection {
 		{"rate_limits", &input.RateLimits},
 		{"output_style", &input.OutputStyle},
 		{"fast_mode", &input.FastMode},
+		{"thinking", &input.Thinking},
+		{"effort", &input.Effort},
 		{"exceeds_200k_tokens", &input.Exceeds200kTokens},
 		{"transcript_path", &input.TranscriptPath},
 		{"version", &input.Version},

@@ -304,6 +304,63 @@ func (w fastModeWidget) Render(data any, ctx *Context) string {
 	return fmt.Sprintf("%s%s%s", theme.Secondary, ctx.Translations.Labels.FastMode, RESET)
 }
 
+// --- thinking widget ---
+
+type thinkingWidget struct{}
+
+func (w thinkingWidget) ID() string { return "thinking" }
+
+// GetData renders whenever the thinking key is present, regardless of
+// Enabled's value — unlike fastMode, extended thinking defaults to on, so a
+// "render only when true" rule would hide the false case that's actually
+// worth announcing (ANALYSIS §5 D3). Absence (nil pointer) omits the widget.
+func (w thinkingWidget) GetData(ctx *Context) (any, error) {
+	if ctx.Stdin.Thinking == nil {
+		return nil, nil
+	}
+	return ctx.Stdin.Thinking.Enabled, nil
+}
+
+// Render assembles "<label>: on" / "<label>: off". on/off are system
+// identifiers, not user-facing prose, so they're not translated (ANALYSIS §5
+// D3). Color follows the same vein as the rate limit label (theme.Secondary
+// label + default-colored value) — off is a state the user picked, not a
+// fault, so it gets no distinct meaning color.
+func (w thinkingWidget) Render(data any, ctx *Context) string {
+	enabled := data.(bool)
+	theme := getTheme(ctx.Config.Theme)
+
+	state := "off"
+	if enabled {
+		state = "on"
+	}
+	return fmt.Sprintf("%s%s: %s%s%s", theme.Secondary, ctx.Translations.Labels.Thinking, RESET, state, RESET)
+}
+
+// --- effort widget ---
+
+type effortWidget struct{}
+
+func (w effortWidget) ID() string { return "effort" }
+
+// GetData renders only when effort.level carries a non-empty value — effort
+// has no "off" concept, so an absent key or empty level both mean there's
+// nothing to show (ANALYSIS §5 D3).
+func (w effortWidget) GetData(ctx *Context) (any, error) {
+	if ctx.Stdin.Effort == nil || ctx.Stdin.Effort.Level == "" {
+		return nil, nil
+	}
+	return ctx.Stdin.Effort.Level, nil
+}
+
+// Render assembles "<label>: <level>". level (low/medium/high/xhigh/max) is
+// a system identifier and is not translated (ANALYSIS §5 D3).
+func (w effortWidget) Render(data any, ctx *Context) string {
+	level := data.(string)
+	theme := getTheme(ctx.Config.Theme)
+	return fmt.Sprintf("%s%s: %s%s%s", theme.Secondary, ctx.Translations.Labels.Effort, RESET, level, RESET)
+}
+
 // --- registration ---
 
 func init() {
@@ -313,4 +370,6 @@ func init() {
 	registerWidget(rateLimit5hWidget{})
 	registerWidget(rateLimit7dWidget{})
 	registerWidget(fastModeWidget{})
+	registerWidget(thinkingWidget{})
+	registerWidget(effortWidget{})
 }

@@ -53,7 +53,7 @@
       실패 0으로 통과한다.
   - 참조: SPEC §5.2, §5.3, §5.12 / ANALYSIS §5 D2, D3
 
-- [ ] task-004: thinking·effort 위젯 추가
+- [x] task-004: thinking·effort 위젯 추가
   - 목적: thinking 위젯을 켜면 확장 사고가 켜짐인지 꺼짐인지가 항상 보이고, effort 위젯은 모델이
     effort 수준을 넘길 때만 그 수준을 보여준다.
   - 접근: `thinking`·`effort`를 포인터로 수용하고 두 최상위 키를 섹션 표에 등재한 뒤,
