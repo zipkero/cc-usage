@@ -137,7 +137,7 @@ func (w projectInfoWidget) GetData(ctx *Context) (any, error) {
 	home, _ := os.UserHomeDir()
 	d := &projectInfoData{
 		DisplayPath: shrinkPath(compressHome(currentDir, home), pathDisplayMaxRunes),
-		Branch:      gitBranch(currentDir),
+		Branch:      cachedGitBranch(ctx.Stdin.SessionId, currentDir),
 		Worktree:    worktreeName(ctx.Stdin.Workspace.GitWorktree),
 	}
 
@@ -186,7 +186,7 @@ func (w projectNameWidget) GetData(ctx *Context) (any, error) {
 
 	return &projectNameData{
 		Name:     filepath.Base(currentDir),
-		Branch:   gitBranch(currentDir),
+		Branch:   cachedGitBranch(ctx.Stdin.SessionId, currentDir),
 		Worktree: worktreeName(ctx.Stdin.Workspace.GitWorktree),
 	}, nil
 }
