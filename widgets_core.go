@@ -273,6 +273,37 @@ func renderRateLimit(data any, label string, ctx *Context) string {
 	return result
 }
 
+// --- fastMode widget ---
+
+type fastModeWidget struct{}
+
+func (w fastModeWidget) ID() string { return "fastMode" }
+
+// GetData renders only when fast_mode is present and true. fast_mode is an
+// opt-in state (/fast) that's off for the vast majority of a session, so
+// absence and explicit false both mean "nothing to announce" and omit the
+// widget (ANALYSIS §5 D3) — unlike thinking, whose default-on state makes
+// false itself worth showing.
+//
+// Rate limit cooldown silently downgrades fast mode back to standard speed,
+// but stdin carries no field for that transition, so this widget keeps
+// showing "on" through a cooldown. Reaching outside stdin for that signal
+// would violate SPEC §3, so this is a known display gap, not a bug.
+func (w fastModeWidget) GetData(ctx *Context) (any, error) {
+	if ctx.Stdin.FastMode == nil || !*ctx.Stdin.FastMode {
+		return nil, nil
+	}
+	return true, nil
+}
+
+// Render outputs the locale label alone — presence of the widget already
+// carries the meaning, so appending a constant value like "on" would only
+// spend width without adding information (ANALYSIS §5 D3).
+func (w fastModeWidget) Render(data any, ctx *Context) string {
+	theme := getTheme(ctx.Config.Theme)
+	return fmt.Sprintf("%s%s%s", theme.Secondary, ctx.Translations.Labels.FastMode, RESET)
+}
+
 // --- registration ---
 
 func init() {
@@ -281,4 +312,5 @@ func init() {
 	registerWidget(costWidget{})
 	registerWidget(rateLimit5hWidget{})
 	registerWidget(rateLimit7dWidget{})
+	registerWidget(fastModeWidget{})
 }

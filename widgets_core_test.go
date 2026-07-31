@@ -445,3 +445,55 @@ func TestFormatTimeRemainingLocaleInvariance(t *testing.T) {
 		})
 	}
 }
+
+// TestFastModeWidgetGetData pins task-003's opt-in-only display rule
+// (ANALYSIS §5 D3): fast_mode is rendered only when the pointer is present
+// AND true. Both "key absent" (nil pointer) and explicit false omit the
+// widget — fast mode defaults off, so neither case has anything to announce.
+func TestFastModeWidgetGetData(t *testing.T) {
+	w := fastModeWidget{}
+	trueVal, falseVal := true, false
+
+	cases := []struct {
+		name     string
+		fastMode *bool
+		wantNil  bool
+	}{
+		{name: "key absent (nil) omits widget", fastMode: nil, wantNil: true},
+		{name: "false omits widget", fastMode: &falseVal, wantNil: true},
+		{name: "true renders widget", fastMode: &trueVal, wantNil: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := &Context{Stdin: StdinInput{FastMode: tc.fastMode}}
+
+			data, err := w.GetData(ctx)
+			if err != nil {
+				t.Fatalf("GetData returned error: %v", err)
+			}
+			if tc.wantNil && data != nil {
+				t.Fatalf("GetData = %v, want nil", data)
+			}
+			if !tc.wantNil && data == nil {
+				t.Fatalf("GetData = nil, want non-nil")
+			}
+		})
+	}
+}
+
+// TestFastModeWidgetRender pins the label-only render assembly (ANALYSIS §5
+// D3): the widget outputs the locale label alone, with no value suffix,
+// since the widget's mere presence already carries the meaning.
+func TestFastModeWidgetRender(t *testing.T) {
+	w := fastModeWidget{}
+	ctx := &Context{
+		Config:       Config{Theme: "default"},
+		Translations: loadTranslations("en"),
+	}
+
+	out := stripANSI(w.Render(true, ctx))
+	if out != "fast" {
+		t.Fatalf("Render = %q, want %q", out, "fast")
+	}
+}

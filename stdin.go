@@ -73,6 +73,12 @@ type StdinInput struct {
 		Name string `json:"name,omitempty"`
 	} `json:"output_style,omitempty"`
 
+	// FastMode은 부재와 false를 구분해야 하므로 포인터로 받는다 — fast mode는
+	// /fast로 켜는 opt-in이라 부재·false 모두 "꺼짐"과 같은 뜻이지만, 위젯이
+	// 그 구분 자체를 렌더 여부 판정에 쓰지 않고 둘 다 생략으로 처리한다
+	// (ANALYSIS §5 D3).
+	FastMode *bool `json:"fast_mode,omitempty"`
+
 	Exceeds200kTokens bool   `json:"exceeds_200k_tokens,omitempty"`
 	TranscriptPath    string `json:"transcript_path,omitempty"`
 	Version           string `json:"version"`
@@ -120,6 +126,7 @@ func stdinSectionTable(input *StdinInput) []stdinSection {
 		{"cost", &input.Cost},
 		{"rate_limits", &input.RateLimits},
 		{"output_style", &input.OutputStyle},
+		{"fast_mode", &input.FastMode},
 		{"exceeds_200k_tokens", &input.Exceeds200kTokens},
 		{"transcript_path", &input.TranscriptPath},
 		{"version", &input.Version},

@@ -16,8 +16,9 @@ var localeKO []byte
 // Translations holds all translatable strings.
 type Translations struct {
 	Labels struct {
-		FiveH  string `json:"fiveH"`
-		SevenD string `json:"sevenD"`
+		FiveH    string `json:"fiveH"`
+		SevenD   string `json:"sevenD"`
+		FastMode string `json:"fastMode"`
 	} `json:"labels"`
 	Time struct {
 		Days    string `json:"days"`
@@ -111,6 +112,12 @@ var presetCharToWidget = map[byte]string{
 	'7': "rateLimit7d",
 	'P': "projectInfo",
 	'N': "projectName",
+	// f는 신설 fastMode 위젯이다. 대문자 F는 쓰지 않는다 — 제거된 performance
+	// 위젯이 쓰던 옛 preset 문자이고 TestRemovedPresetCharsAreUnmapped가 그
+	// 미매핑을 못 박고 있다. F를 재사용하면 옛 preset 문자열을 그대로 둔
+	// 사용자에게 다른 위젯이 되살아나 보이고 그 회귀 가드도 무력해진다
+	// (ANALYSIS §5 D2).
+	'f': "fastMode",
 }
 
 // resolvePreset parses Config.Preset into Config.Lines.
