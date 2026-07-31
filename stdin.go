@@ -26,6 +26,12 @@ type StdinInput struct {
 		CurrentDir string   `json:"current_dir"`
 		ProjectDir string   `json:"project_dir,omitempty"`
 		AddedDirs  []string `json:"added_dirs,omitempty"`
+
+		// GitWorktree는 빈 문자열을 부재로 본다(포인터 아님) — 공식 문서상 이
+		// 필드는 현재 디렉토리가 linked git worktree 안일 때만 존재한다.
+		// `--worktree` 세션 전용인 기존 Worktree.Name과 달리 일반 git
+		// worktree에서도 채워진다(ANALYSIS §5 D4).
+		GitWorktree string `json:"git_worktree,omitempty"`
 	} `json:"workspace"`
 
 	Worktree *struct {

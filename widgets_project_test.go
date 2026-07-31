@@ -136,6 +136,77 @@ func TestProjectInfoGetDataCwdFallback(t *testing.T) {
 	})
 }
 
+// TestWorktreeName covers the pure last-path-segment extraction shared by
+// both project widgets (SPEC §5.4; ANALYSIS §5 D4). Table-driven since this
+// is pure string logic per project convention.
+func TestWorktreeName(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "빈 문자열(부재) → 빈 문자열", in: "", want: ""},
+		{name: "슬래시 경로 → 마지막 세그먼트", in: "/repo/.git/worktrees/feature-x", want: "feature-x"},
+		{name: "백슬래시 경로 → 마지막 세그먼트", in: `C:\repo\worktrees\feature-x`, want: "feature-x"},
+		{name: "이름만 있는 경우 → 그대로", in: "feature-x", want: "feature-x"},
+		{name: "말미 구분자 제거 후 세그먼트", in: "/repo/worktrees/feature-x/", want: "feature-x"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := worktreeName(tc.in)
+			if got != tc.want {
+				t.Fatalf("worktreeName(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestProjectInfoWorktreeToken covers projectInfo's worktree token across key
+// absence and both documented value shapes (path vs bare name) — both must
+// render identically since git_worktree's own shape isn't specified
+// (SPEC §5.4; ANALYSIS §5 D4). git is disabled so Branch stays empty and
+// doesn't interfere with the assertions.
+func TestProjectInfoWorktreeToken(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	cases := []struct {
+		name        string
+		gitWorktree string
+		wantToken   bool
+		wantName    string
+	}{
+		{name: "키 없음 → 토큰 생략", gitWorktree: "", wantToken: false},
+		{name: "경로 형태 → 마지막 세그먼트 토큰", gitWorktree: "/repo/.git/worktrees/feature-x", wantToken: true, wantName: "feature-x"},
+		{name: "이름 형태 → 그대로 토큰", gitWorktree: "feature-x", wantToken: true, wantName: "feature-x"},
+	}
+
+	w := projectInfoWidget{}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := &Context{
+				Stdin:  StdinInput{},
+				Config: Config{Theme: "default"},
+			}
+			ctx.Stdin.Workspace.CurrentDir = "/tmp/project"
+			ctx.Stdin.Workspace.GitWorktree = tc.gitWorktree
+
+			data, err := w.GetData(ctx)
+			if err != nil {
+				t.Fatalf("GetData returned error: %v", err)
+			}
+			rendered := stripANSI(w.Render(data, ctx))
+			if tc.wantToken {
+				want := "[" + tc.wantName + "]"
+				if !strings.Contains(rendered, want) {
+					t.Fatalf("projectInfo render = %q, want token %q", rendered, want)
+				}
+			} else if strings.Contains(rendered, "[") || strings.Contains(rendered, "]") {
+				t.Fatalf("projectInfo render = %q, want no worktree token", rendered)
+			}
+		})
+	}
+}
+
 func TestProjectInfoOmitsRemovedStatusTokens(t *testing.T) {
 	w := projectInfoWidget{}
 	ctx := &Context{
@@ -223,6 +294,51 @@ func TestProjectNameWidget(t *testing.T) {
 	rendered = stripANSI(w.Render(&projectNameData{Name: "cc-usage", Branch: "main"}, ctx))
 	if rendered != "cc-usage (main)" {
 		t.Fatalf("Render with branch = %q, want %q", rendered, "cc-usage (main)")
+	}
+}
+
+// TestProjectNameWorktreeToken covers projectName's worktree token across key
+// absence and both documented value shapes (path vs bare name), mirroring
+// TestProjectInfoWorktreeToken so both widgets share the same verified shape
+// (SPEC §5.4; ANALYSIS §5 D4).
+func TestProjectNameWorktreeToken(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	cases := []struct {
+		name        string
+		gitWorktree string
+		wantToken   bool
+		wantName    string
+	}{
+		{name: "키 없음 → 토큰 생략", gitWorktree: "", wantToken: false},
+		{name: "경로 형태 → 마지막 세그먼트 토큰", gitWorktree: "/repo/.git/worktrees/feature-x", wantToken: true, wantName: "feature-x"},
+		{name: "이름 형태 → 그대로 토큰", gitWorktree: "feature-x", wantToken: true, wantName: "feature-x"},
+	}
+
+	w := projectNameWidget{}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := &Context{
+				Stdin:  StdinInput{},
+				Config: Config{Theme: "default"},
+			}
+			ctx.Stdin.Workspace.CurrentDir = "/Users/alice/projects/cc-usage"
+			ctx.Stdin.Workspace.GitWorktree = tc.gitWorktree
+
+			data, err := w.GetData(ctx)
+			if err != nil {
+				t.Fatalf("GetData returned error: %v", err)
+			}
+			rendered := stripANSI(w.Render(data, ctx))
+			if tc.wantToken {
+				want := "[" + tc.wantName + "]"
+				if !strings.Contains(rendered, want) {
+					t.Fatalf("projectName render = %q, want token %q", rendered, want)
+				}
+			} else if strings.Contains(rendered, "[") || strings.Contains(rendered, "]") {
+				t.Fatalf("projectName render = %q, want no worktree token", rendered)
+			}
+		})
 	}
 }
 

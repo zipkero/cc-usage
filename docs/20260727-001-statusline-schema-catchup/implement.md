@@ -70,7 +70,7 @@
       v0.5.6과 같음을 직접 대조한다. `make test`와 `go vet ./...`가 실패 0으로 통과한다.
   - 참조: SPEC §5.2, §5.3, §5.12 / ANALYSIS §5 D2, D3
 
-- [ ] task-005: project 계열 위젯에 worktree 토큰 반영
+- [x] task-005: project 계열 위젯에 worktree 토큰 반영
   - 목적: git worktree 정보를 담은 입력에서 project 계열 위젯 두 개가 지금 작업 중인 worktree를
     함께 보여주고, 그 정보가 없는 입력에서는 지금과 똑같이 출력된다.
   - 접근: `workspace.git_worktree`를 빈 문자열이 곧 부재인 값으로 수용하고(기존 `workspace`

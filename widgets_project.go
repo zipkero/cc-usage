@@ -84,6 +84,31 @@ func gitBranch(dir string) string {
 	return ""
 }
 
+// worktreeName extracts the last path segment from raw, treating both '/'
+// and '\' as separators regardless of build OS. workspace.git_worktree's
+// documented contents don't specify whether the value is a path or a bare
+// name (ANALYSIS §5 D4); either way this operation yields the display name,
+// so the ambiguity doesn't need to be resolved. Trailing separators are
+// stripped first so e.g. "/repo/wt/" still yields "wt". Empty input (the
+// "absent" sentinel) returns "".
+func worktreeName(raw string) string {
+	trimmed := strings.TrimRight(raw, `/\`)
+	if idx := strings.LastIndexAny(trimmed, `/\`); idx >= 0 {
+		return trimmed[idx+1:]
+	}
+	return trimmed
+}
+
+// appendWorktreeToken appends the shared bracketed worktree tag to b when
+// worktree is non-empty. Both project widgets call this so the token's form
+// stays identical across them (SPEC §5.4; ANALYSIS §5 D4).
+func appendWorktreeToken(b *strings.Builder, worktree string, theme ThemeColors) {
+	if worktree == "" {
+		return
+	}
+	fmt.Fprintf(b, " %s[%s]%s", theme.Info, worktree, RESET)
+}
+
 // --- projectInfo widget ---
 
 type projectInfoWidget struct{}
@@ -91,6 +116,7 @@ type projectInfoWidget struct{}
 type projectInfoData struct {
 	DisplayPath string
 	Branch      string
+	Worktree    string
 }
 
 func (w projectInfoWidget) ID() string { return "projectInfo" }
@@ -112,6 +138,7 @@ func (w projectInfoWidget) GetData(ctx *Context) (any, error) {
 	d := &projectInfoData{
 		DisplayPath: shrinkPath(compressHome(currentDir, home), pathDisplayMaxRunes),
 		Branch:      gitBranch(currentDir),
+		Worktree:    worktreeName(ctx.Stdin.Workspace.GitWorktree),
 	}
 
 	return d, nil
@@ -131,6 +158,8 @@ func (w projectInfoWidget) Render(data any, ctx *Context) string {
 		b.WriteString(fmt.Sprintf(" %s(%s)%s", theme.Branch, d.Branch, RESET))
 	}
 
+	appendWorktreeToken(&b, d.Worktree, theme)
+
 	return b.String()
 }
 
@@ -139,8 +168,9 @@ func (w projectInfoWidget) Render(data any, ctx *Context) string {
 type projectNameWidget struct{}
 
 type projectNameData struct {
-	Name   string
-	Branch string
+	Name     string
+	Branch   string
+	Worktree string
 }
 
 func (w projectNameWidget) ID() string { return "projectName" }
@@ -155,8 +185,9 @@ func (w projectNameWidget) GetData(ctx *Context) (any, error) {
 	}
 
 	return &projectNameData{
-		Name:   filepath.Base(currentDir),
-		Branch: gitBranch(currentDir),
+		Name:     filepath.Base(currentDir),
+		Branch:   gitBranch(currentDir),
+		Worktree: worktreeName(ctx.Stdin.Workspace.GitWorktree),
 	}, nil
 }
 
@@ -169,6 +200,7 @@ func (w projectNameWidget) Render(data any, ctx *Context) string {
 	if d.Branch != "" {
 		b.WriteString(fmt.Sprintf(" %s(%s)%s", theme.Branch, d.Branch, RESET))
 	}
+	appendWorktreeToken(&b, d.Worktree, theme)
 	return b.String()
 }
 
