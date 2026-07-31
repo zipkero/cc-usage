@@ -425,6 +425,141 @@ func TestRepoInfoWidget(t *testing.T) {
 	}
 }
 
+// prField is a type alias matching StdinInput.PR's anonymous struct exactly
+// (field names, types, and json tags) so tests can construct values for it.
+type prField = struct {
+	Number      int    `json:"number"`
+	URL         string `json:"url"`
+	ReviewState string `json:"review_state,omitempty"`
+}
+
+// TestPullRequestWidget covers pr's key-absent / number-only / number+url /
+// each documented review_state / unrecognized review_state cases
+// (SPEC §5.5, §5.3; ANALYSIS §5 D5, task-007). Number <= 0 is treated the
+// same as key-absent.
+func TestPullRequestWidget(t *testing.T) {
+	cases := []struct {
+		name       string
+		pr         *prField
+		wantSkip   bool
+		wantText   string // expected "#<n>" possibly wrapped in an OSC 8 link
+		wantSymbol string
+	}{
+		{name: "키 없음 → 위젯 생략", pr: nil, wantSkip: true},
+		{name: "번호 0 → 위젯 생략", pr: &prField{Number: 0}, wantSkip: true},
+		{name: "번호 음수 → 위젯 생략", pr: &prField{Number: -3}, wantSkip: true},
+		{
+			name:     "번호만 → 링크 없이 번호만",
+			pr:       &prField{Number: 42},
+			wantText: "#42",
+		},
+		{
+			name:     "번호+URL → OSC 8 링크로 감싼 번호",
+			pr:       &prField{Number: 42, URL: "https://github.com/zipkero/cc-usage/pull/42"},
+			wantText: osc8Link("https://github.com/zipkero/cc-usage/pull/42", "#42"),
+		},
+		{
+			name:       "review_state approved → 기호 표시",
+			pr:         &prField{Number: 1, ReviewState: "approved"},
+			wantText:   "#1",
+			wantSymbol: "✓",
+		},
+		{
+			name:       "review_state changes_requested → 기호 표시",
+			pr:         &prField{Number: 1, ReviewState: "changes_requested"},
+			wantText:   "#1",
+			wantSymbol: "✗",
+		},
+		{
+			name:       "review_state pending → 기호 표시",
+			pr:         &prField{Number: 1, ReviewState: "pending"},
+			wantText:   "#1",
+			wantSymbol: "…",
+		},
+		{
+			name:       "review_state draft → 기호 표시",
+			pr:         &prField{Number: 1, ReviewState: "draft"},
+			wantText:   "#1",
+			wantSymbol: "✎",
+		},
+		{
+			name:       "review_state 부재 → 기호 없이 번호만",
+			pr:         &prField{Number: 7},
+			wantText:   "#7",
+			wantSymbol: "",
+		},
+		{
+			name:       "미확인 review_state → 기호 없이 번호만, 원문 미노출",
+			pr:         &prField{Number: 9, ReviewState: "some_future_state"},
+			wantText:   "#9",
+			wantSymbol: "",
+		},
+	}
+
+	w := pullRequestWidget{}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := &Context{
+				Stdin:  StdinInput{},
+				Config: Config{Theme: "default"},
+			}
+			ctx.Stdin.PR = tc.pr
+
+			data, err := w.GetData(ctx)
+			if err != nil {
+				t.Fatalf("GetData returned error: %v", err)
+			}
+			if tc.wantSkip {
+				if data != nil {
+					t.Fatalf("GetData returned %v, want nil", data)
+				}
+				return
+			}
+			if data == nil {
+				t.Fatal("GetData returned nil, want non-nil data")
+			}
+
+			rendered := w.Render(data, ctx)
+			// rendered carries theme color codes but not an ANSI-stripped OSC 8
+			// sequence — stripANSI only removes CSI (\x1b[...) sequences, so the
+			// OSC 8 escape stays intact for the link assertion below.
+			if !strings.Contains(rendered, tc.wantText) {
+				t.Fatalf("Render = %q, want it to contain %q", rendered, tc.wantText)
+			}
+			if tc.wantSymbol != "" && !strings.Contains(rendered, tc.wantSymbol) {
+				t.Fatalf("Render = %q, want it to contain symbol %q", rendered, tc.wantSymbol)
+			}
+			if tc.pr != nil && tc.pr.ReviewState == "some_future_state" && strings.Contains(rendered, "some_future_state") {
+				t.Fatalf("Render = %q, unrecognized review_state leaked into output", rendered)
+			}
+		})
+	}
+}
+
+// TestPullRequestAndRepoInfoBothAbsent pins SPEC §5.5's completion sentence:
+// when both workspace.repo and pr are absent, both widgets disappear and no
+// related output remains, using preset chars G (repoInfo) and # (pullRequest)
+// together (task-007).
+func TestPullRequestAndRepoInfoBothAbsent(t *testing.T) {
+	ctx := &Context{
+		Stdin: StdinInput{},
+		Config: Config{
+			Preset:    "G#",
+			Theme:     "default",
+			Separator: "space",
+		},
+		Translations: loadTranslations("en"),
+	}
+
+	result := orchestrate(ctx)
+	if result.WidgetCount != 0 {
+		t.Fatalf("WidgetCount = %d, want 0 when workspace.repo and pr are both absent", result.WidgetCount)
+	}
+	if len(result.Lines) != 0 {
+		t.Fatalf("Lines = %v, want no rendered lines", result.Lines)
+	}
+}
+
 // TestProjectPathCompressHome covers the home-tilde compression branch of the
 // projectInfo path display helper (SPEC §5.1, §5.2). All inputs are
 // deterministic strings — no os.UserHomeDir / wall-clock dependency.

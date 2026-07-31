@@ -108,6 +108,15 @@ type StdinInput struct {
 		Level string `json:"level"`
 	} `json:"effort,omitempty"`
 
+	// PR은 부재와 값이 구분되는 포인터로 받는다 — 공식 문서상 이 필드는 현재
+	// 브랜치에 열린 PR이 있을 때만 존재하고 merge·close되면 사라진다.
+	// ReviewState는 그 안에서도 독립적으로 부재할 수 있다(ANALYSIS §5 D5).
+	PR *struct {
+		Number      int    `json:"number"`
+		URL         string `json:"url"`
+		ReviewState string `json:"review_state,omitempty"`
+	} `json:"pr,omitempty"`
+
 	Exceeds200kTokens bool   `json:"exceeds_200k_tokens,omitempty"`
 	TranscriptPath    string `json:"transcript_path,omitempty"`
 	Version           string `json:"version"`
@@ -158,6 +167,7 @@ func stdinSectionTable(input *StdinInput) []stdinSection {
 		{"fast_mode", &input.FastMode},
 		{"thinking", &input.Thinking},
 		{"effort", &input.Effort},
+		{"pr", &input.PR},
 		{"exceeds_200k_tokens", &input.Exceeds200kTokens},
 		{"transcript_path", &input.TranscriptPath},
 		{"version", &input.Version},

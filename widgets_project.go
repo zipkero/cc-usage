@@ -227,6 +227,79 @@ func (w repoInfoWidget) Render(data any, ctx *Context) string {
 	return fmt.Sprintf("%s%s%s", theme.Secondary, ownerName, RESET)
 }
 
+// --- pullRequest widget ---
+
+type pullRequestWidget struct{}
+
+type pullRequestData struct {
+	Number      int
+	URL         string
+	StateSymbol string
+}
+
+func (w pullRequestWidget) ID() string { return "pullRequest" }
+
+// reviewStateSymbols maps pr.review_state's documented values to a single
+// display-safe symbol. All four come from the Dingbats/General Punctuation
+// blocks — East Asian Ambiguous width, same category as the model widget's
+// Geometric Shapes symbols (◆ ◇ ○ ●), which this codebase already treats as
+// 1 column wide. task-009's display-width table will need to cover this same
+// category (ANALYSIS §5 D5, D8).
+var reviewStateSymbols = map[string]string{
+	"approved":          "✓",
+	"changes_requested": "✗",
+	"pending":           "…",
+	"draft":             "✎",
+}
+
+// GetData renders only when pr.number is positive. A merged/closed PR (or
+// the "no open PR" case documented for this field) means Claude Code omits
+// pr entirely; a non-positive number is treated the same way as absence
+// (ANALYSIS §5 D5).
+func (w pullRequestWidget) GetData(ctx *Context) (any, error) {
+	pr := ctx.Stdin.PR
+	if pr == nil || pr.Number <= 0 {
+		return nil, nil
+	}
+
+	// review_state can be absent independently of number/url. An unrecognized
+	// value is logged and dropped rather than passed through — new enum
+	// values must not leak an unmapped string onto stdout (SPEC §3).
+	symbol := ""
+	if pr.ReviewState != "" {
+		if s, ok := reviewStateSymbols[pr.ReviewState]; ok {
+			symbol = s
+		} else {
+			debugLog("pullRequest", "unknown review_state %q, omitting symbol", pr.ReviewState)
+		}
+	}
+
+	return &pullRequestData{
+		Number:      pr.Number,
+		URL:         pr.URL,
+		StateSymbol: symbol,
+	}, nil
+}
+
+// Render wraps "#<number>" in an OSC 8 link when URL is present, then
+// appends the review-state symbol (if any) after a space.
+func (w pullRequestWidget) Render(data any, ctx *Context) string {
+	d := data.(*pullRequestData)
+	theme := getTheme(ctx.Config.Theme)
+
+	text := fmt.Sprintf("#%d", d.Number)
+	if d.URL != "" {
+		text = osc8Link(d.URL, text)
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s%s%s", theme.Secondary, text, RESET)
+	if d.StateSymbol != "" {
+		fmt.Fprintf(&b, " %s", d.StateSymbol)
+	}
+	return b.String()
+}
+
 // compressHome substitutes the user's home directory prefix with "~". When
 // home is empty (UserHomeDir failed) or current is outside home, the absolute
 // path is returned unchanged (SPEC §5.1, §5.2; ANALYSIS §5.C — exact-match
@@ -292,4 +365,5 @@ func init() {
 	registerWidget(projectInfoWidget{})
 	registerWidget(projectNameWidget{})
 	registerWidget(repoInfoWidget{})
+	registerWidget(pullRequestWidget{})
 }
