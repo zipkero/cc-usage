@@ -85,7 +85,7 @@
       바뀌지 않았음을 직접 실행해 확인한다. `make test`와 `go vet ./...`가 실패 0으로 통과한다.
   - 참조: SPEC §5.4, §5.3, §5.12 / ANALYSIS §5 D4
 
-- [ ] task-006: repoInfo 위젯 추가
+- [x] task-006: repoInfo 위젯 추가
   - 목적: 저장소 좌표를 담은 입력에서 위젯을 켠 사용자가 `owner/name` 형태로 어떤 저장소인지
     보고, 그 정보가 없으면 칸이 나타나지 않는다.
   - 접근: `workspace.repo`를 부재와 값이 구분되는 포인터로 수용하고, owner와 name만 조합해

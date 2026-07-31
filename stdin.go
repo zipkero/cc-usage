@@ -32,6 +32,16 @@ type StdinInput struct {
 		// `--worktree` 세션 전용인 기존 Worktree.Name과 달리 일반 git
 		// worktree에서도 채워진다(ANALYSIS §5 D4).
 		GitWorktree string `json:"git_worktree,omitempty"`
+
+		// Repo는 부재와 값이 구분되는 포인터로 받는다 — 공식 문서상 이 필드는
+		// git 저장소 안이고 origin remote가 설정돼 있을 때만 존재한다. 기존
+		// workspace 섹션 안이므로 stdinSectionTable 변경은 필요 없다
+		// (ANALYSIS §5 D5).
+		Repo *struct {
+			Host  string `json:"host"`
+			Owner string `json:"owner"`
+			Name  string `json:"name"`
+		} `json:"repo,omitempty"`
 	} `json:"workspace"`
 
 	Worktree *struct {

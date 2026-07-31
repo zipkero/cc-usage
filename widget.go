@@ -124,6 +124,9 @@ var presetCharToWidget = map[byte]string{
 	// 위젯의 금지 집합(S V a D B H F) 어디와도 겹치지 않는다(ANALYSIS §5 D2).
 	'T': "thinking",
 	'E': "effort",
+	// repoInfo는 G다. 기존 점유(M C $ R 7 P N f T E)와 제거된 위젯의 금지
+	// 집합(S V a D B H F) 어디와도 겹치지 않는다(ANALYSIS §5 D5).
+	'G': "repoInfo",
 }
 
 // resolvePreset parses Config.Preset into Config.Lines.

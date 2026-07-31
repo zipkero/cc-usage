@@ -366,6 +366,65 @@ func TestProjectNameGetDataSkipsWhenCwdUnknown(t *testing.T) {
 	}
 }
 
+// TestRepoInfoWidget covers workspace.repo's key-absent / complete / owner-or-
+// name-missing cases (SPEC §5.5, §5.3; ANALYSIS §5 D5). Only owner/name are
+// checked against the rendered output — host must never appear.
+func TestRepoInfoWidget(t *testing.T) {
+	type repo = struct {
+		Host  string `json:"host"`
+		Owner string `json:"owner"`
+		Name  string `json:"name"`
+	}
+
+	cases := []struct {
+		name     string
+		repo     *repo
+		wantSkip bool
+		want     string
+	}{
+		{name: "키 없음 → 위젯 생략", repo: nil, wantSkip: true},
+		{
+			name: "owner·name·host 모두 있음 → owner/name만 출력",
+			repo: &repo{Host: "github.com", Owner: "zipkero", Name: "cc-usage"},
+			want: "zipkero/cc-usage",
+		},
+		{name: "owner 결손 → 위젯 생략", repo: &repo{Host: "github.com", Name: "cc-usage"}, wantSkip: true},
+		{name: "name 결손 → 위젯 생략", repo: &repo{Host: "github.com", Owner: "zipkero"}, wantSkip: true},
+	}
+
+	w := repoInfoWidget{}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := &Context{
+				Stdin:  StdinInput{},
+				Config: Config{Theme: "default"},
+			}
+			ctx.Stdin.Workspace.Repo = tc.repo
+
+			data, err := w.GetData(ctx)
+			if err != nil {
+				t.Fatalf("GetData returned error: %v", err)
+			}
+			if tc.wantSkip {
+				if data != nil {
+					t.Fatalf("GetData returned %v, want nil", data)
+				}
+				return
+			}
+			if data == nil {
+				t.Fatal("GetData returned nil, want non-nil data")
+			}
+			rendered := stripANSI(w.Render(data, ctx))
+			if rendered != tc.want {
+				t.Fatalf("Render = %q, want %q", rendered, tc.want)
+			}
+			if strings.Contains(rendered, "github.com") {
+				t.Fatalf("Render = %q, host must not appear", rendered)
+			}
+		})
+	}
+}
+
 // TestProjectPathCompressHome covers the home-tilde compression branch of the
 // projectInfo path display helper (SPEC §5.1, §5.2). All inputs are
 // deterministic strings — no os.UserHomeDir / wall-clock dependency.

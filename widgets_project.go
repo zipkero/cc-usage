@@ -204,6 +204,29 @@ func (w projectNameWidget) Render(data any, ctx *Context) string {
 	return b.String()
 }
 
+// --- repoInfo widget ---
+
+type repoInfoWidget struct{}
+
+func (w repoInfoWidget) ID() string { return "repoInfo" }
+
+// GetData renders only when workspace.repo is present with both Owner and
+// Name non-empty. Host is deliberately not part of the gate or the render —
+// owner/name alone identifies the repo and costs less width (ANALYSIS §5 D5).
+func (w repoInfoWidget) GetData(ctx *Context) (any, error) {
+	repo := ctx.Stdin.Workspace.Repo
+	if repo == nil || repo.Owner == "" || repo.Name == "" {
+		return nil, nil
+	}
+	return repo.Owner + "/" + repo.Name, nil
+}
+
+func (w repoInfoWidget) Render(data any, ctx *Context) string {
+	ownerName := data.(string)
+	theme := getTheme(ctx.Config.Theme)
+	return fmt.Sprintf("%s%s%s", theme.Secondary, ownerName, RESET)
+}
+
 // compressHome substitutes the user's home directory prefix with "~". When
 // home is empty (UserHomeDir failed) or current is outside home, the absolute
 // path is returned unchanged (SPEC §5.1, §5.2; ANALYSIS §5.C — exact-match
@@ -268,4 +291,5 @@ func shrinkPath(s string, max int) string {
 func init() {
 	registerWidget(projectInfoWidget{})
 	registerWidget(projectNameWidget{})
+	registerWidget(repoInfoWidget{})
 }
