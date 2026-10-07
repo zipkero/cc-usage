@@ -1,35 +1,5 @@
-### Go template
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Allow pre-built plugin binaries
-!bin/
-!bin/**
-
-# Test binary, built with `go test -c`
-*.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
-*.out
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
-.env
-
-dist/
+# Claude Code가 mod를 로드할 때 버전별로 생성하는 타입 선언
+src/.claude-plugin/types/
 
 # ide
 .vscode
@@ -37,6 +7,3 @@ dist/
 
 # macOS
 .DS_Store
-
-# go build ./... 산출물 (module root)
-/cc-usage
