@@ -65,7 +65,7 @@ export function register(on: On) {
       for (const part of seg) children.push(Text(part))
     })
     // band는 spinner 바로 아래에 붙어 그려진다 — 위 한 줄을 비워 떼어 놓는다
-    return Box({ flexDirection: 'row', marginTop: 1, children })
+    return Box({ flexDirection: 'row', marginTop: 1, paddingLeft: 1, children })
   })
 }
 
