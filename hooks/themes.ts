@@ -129,12 +129,13 @@ export function percentRole(percent: number): 'safe' | 'warning' | 'danger' {
   return 'danger'
 }
 
-// Go contextTokenWarn·contextTokenDanger와 같은 기준 — 그 밖에는 기본색이라 null이다
+// Go contextTokenWarn·contextTokenDanger와 같은 기준이다
 const CONTEXT_TOKEN_WARN = 256_000
 const CONTEXT_TOKEN_DANGER = 512_000
 
-export function tokenRole(tokens: number): 'warning' | 'danger' | null {
+// 그 밖에는 Go 판의 기본색 대신 secondary다 — 터미널 기본 전경색이 테마 색 사이에서 혼자 튄다
+export function tokenRole(tokens: number): 'secondary' | 'warning' | 'danger' {
   if (tokens >= CONTEXT_TOKEN_DANGER) return 'danger'
   if (tokens >= CONTEXT_TOKEN_WARN) return 'warning'
-  return null
+  return 'secondary'
 }

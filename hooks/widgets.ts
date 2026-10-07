@@ -128,9 +128,7 @@ function contextWidget(u: Figures, width: number, theme: Theme): Part[] {
   const parts: Part[] = progressBar(percent, width, theme, level)
   parts.push({ text: ' ' }, paint(percent + '%', theme, level))
   if (tokens !== undefined) {
-    const role = tokenRole(tokens)
-    const text = ' ' + formatTokens(tokens)
-    parts.push(role ? paint(text, theme, role) : { text })
+    parts.push(paint(' ' + formatTokens(tokens), theme, tokenRole(tokens)))
   }
   return parts
 }

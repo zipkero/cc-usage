@@ -37,6 +37,8 @@ export function register(on: On, options: PluginOptions) {
     homes = await readHomes($)
     language = resolveLanguage(settings.language, await readLocales($))
     await refreshAll($, lookup)
+    // 엔진은 플러그인 로드 때 이 데이터가 오기 전에 이미 한 번 그려 두고 그 답을 재사용한다 — 다시 그리라고 하지 않으면 다음 tick·턴까지 band가 비어 있다
+    $.ui.invalidate('ui.render')
     $.clock.every(TICK_MS, async () => {
       await refreshAll($, lookup)
       $.ui.invalidate('ui.render')
