@@ -172,7 +172,7 @@
   - 참조: SPEC §5.14 / DESIGN §4
   - 승인 근거: 2026-10-07 bb30628 (release 128ee80) — hooks·plugin.json diff 비어 있음, release 트리에 테스트 없음·marketplace.json·README.md 유지, release 체크아웃 validate 통과, CLAUDE.md §구조와 `src/` 일치
 
-- [ ] task-010: 실제 터미널에서 업데이트 로드와 band 렌더 확인
+- [x] task-010: 실제 터미널에서 업데이트 로드와 band 렌더 확인
   - 목적: 사용자가 Claude Code에서 `/plugin update` 후 `/reload-plugins`를 실행하면 새 버전이 로드되고, 실제 터미널 band에 테마 색과 폭 맞춤이 의도대로 그려진다.
   - 접근: 사람이 marketplace 설치본을 업데이트·재로드한 뒤 `/config`에서 설정을 바꾸고 터미널 폭을 줄여 가며 band를 본다.
   - 검증 조건:
@@ -185,3 +185,4 @@
     - 확인:
       - 수동 확인: 사람이 실제 터미널의 Claude Code에서 위 항목을 보고 관찰 결과(가능하면 스크린샷)를 남긴다.
   - 참조: SPEC §5.14 / DESIGN §5
+  - 승인 근거: 2026-10-07 bf52055 (release d62449e, v0.7.1) — 사용자가 실제 터미널에서 수동 확인: `/plugin update`·`/reload-plugins` 직후 band 표시(스크린샷), `/config` 6행·설정 반영, 테마 색, 폭 맞춤·`…`, `ko` 라벨 모두 확인

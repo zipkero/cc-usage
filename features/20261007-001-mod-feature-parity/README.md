@@ -8,7 +8,7 @@ TS mod(v0.6.2)에 Go 판에서 빠진 설정·테마·구분자·다국어·폭 
 ## 상태
 - [x] SPEC
 - [x] DESIGN
-- [ ] IMPLEMENT
+- [x] IMPLEMENT
 
 ## 문서
 - [spec.md](./spec.md)
@@ -20,3 +20,5 @@ TS mod(v0.6.2)에 Go 판에서 빠진 설정·테마·구분자·다국어·폭 
 - 2026-10-07: SPEC §3에 pluginConfigs 손 편집 타입 오류 예외 추가
 - 2026-10-07: DESIGN 작성
 - 2026-10-07: IMPLEMENT 체크리스트 작성
+- 2026-10-07: 0.7.1 — 로드 직후 band 미표시 수정, 토큰 수 색을 기본색에서 secondary로 변경
+- 2026-10-07: IMPLEMENT 완료
