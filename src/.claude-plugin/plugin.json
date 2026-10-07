@@ -1,6 +1,6 @@
 {
   "name": "cc-usage-mod",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Shows project, model, context, cost and rate limits in a band above the Claude Code prompt",
   "author": {
     "name": "zipkero"

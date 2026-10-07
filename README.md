@@ -31,7 +31,7 @@ Go 버전은 `settings.json`의 `statusLine`에 바이너리 경로를 기록했
 
 | 항목 | 출처 | 비고 |
 |------|------|------|
-| 프로젝트 (브랜치) | `$.session.cwd()`, `git branch --show-current` | 브랜치는 git 실행 결과 |
+| 프로젝트 (브랜치) | `$.session.root()`, `git branch --show-current` | 브랜치는 git 실행 결과 |
 | 모델 | `$.session.model()` | 모델 id |
 | 컨텍스트 | `$.session.usage().context` | 첫 응답 전에는 `ctx: -` |
 | 비용 | `$.session.usage().cost` | |

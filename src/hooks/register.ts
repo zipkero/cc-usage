@@ -23,7 +23,8 @@ type Figures = Pick<SessionUsage, 'context' | 'rateLimits' | 'cost'>
 
 let usage: Figures | null = null
 let model = ''
-let cwd = ''
+// cwd()는 셸 cd를 따라가 이름·브랜치가 흔들리므로 cd로 움직이지 않는 root()를 쓴다
+let root = ''
 let branch = ''
 // PoC 진단용: 브랜치를 못 읽은 이유를 band에 그대로 보인다
 let branchError = ''
@@ -76,13 +77,13 @@ async function refreshAll($: EngineInterface) {
 
 async function refreshSession($: EngineInterface) {
   model = await $.session.model()
-  cwd = await $.session.cwd()
+  root = await $.session.root()
   await readBranch($)
 }
 
 async function readBranch($: EngineInterface) {
   try {
-    const r = await $.process.run(['git', 'branch', '--show-current'], { timeoutMs: 2000 })
+    const r = await $.process.run(['git', 'branch', '--show-current'], { cwd: root, timeoutMs: 2000 })
     branch = r.exitCode === 0 ? r.stdout.trim() : ''
     branchError = r.exitCode === 0 ? '' : 'exit ' + r.exitCode + ': ' + r.stderr.trim()
   } catch (err) {
@@ -114,8 +115,8 @@ function buildSegments(): Part[][] {
 }
 
 function projectSegment(): Part[] | null {
-  if (!cwd) return null
-  const name = cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd
+  if (!root) return null
+  const name = root.split(/[\\/]/).filter(Boolean).pop() ?? root
   const parts: Part[] = [{ children: [name], color: 'cyan' }]
   if (branch) parts.push({ children: [' (' + branch + ')'], color: 'magenta' })
   else if (branchError) parts.push({ children: [' (git: ' + branchError.slice(0, 60) + ')'], dimColor: true })

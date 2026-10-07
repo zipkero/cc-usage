@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 개요
 
 Claude Code mod(TypeScript 함수 hook plugin)로 프롬프트 위 band에 세션 상태를 그린다.
-데이터는 stdin이 아니라 mods API(`$.session.usage()`, `$.session.model()`, `$.session.cwd()`)에서 온다.
+데이터는 stdin이 아니라 mods API(`$.session.usage()`, `$.session.model()`, `$.session.root()`)에서 온다.
 
 Go status line 버전은 `deprecated-go` 브랜치에 보존돼 있고 갱신하지 않는다.
 
