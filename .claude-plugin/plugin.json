@@ -1,9 +1,50 @@
 {
   "name": "cc-usage-mod",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Shows project, model, context, cost and rate limits in a band above the Claude Code prompt",
   "author": {
     "name": "zipkero"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "userConfig": {
+    "layout": {
+      "type": "string",
+      "title": "Layout",
+      "description": "Widgets per line. Separate lines with |, and tokens within a line with commas or spaces. A token equal to a widget ID is that widget; otherwise each character is a preset letter. Letters: P projectInfo, N projectName, G repoInfo, M model, C context, $ cost, R rateLimit5h, 7 rateLimit7d, L spendLimit. Unknown characters are ignored, and an empty result falls back to NMC$R7L. Examples: PMC$|R7L, projectInfo, model | rateLimit5h rateLimit7d",
+      "default": "NMC$R7L"
+    },
+    "disabledWidgets": {
+      "type": "string",
+      "title": "Disabled widgets",
+      "description": "Widgets to hide even when the layout lists them, as preset letters or widget IDs separated by commas, spaces or |. Letters: P projectInfo, N projectName, G repoInfo, M model, C context, $ cost, R rateLimit5h, 7 rateLimit7d, L spendLimit. Example: $, rateLimit7d",
+      "default": ""
+    },
+    "theme": {
+      "type": "string",
+      "title": "Theme",
+      "description": "Color theme of the band. Context and rate limit percentages use the theme's safe color up to 50%, warning up to 80%, and danger above.",
+      "options": ["default", "minimal", "catppuccin", "dracula", "gruvbox", "nord", "tokyoNight", "solarized"],
+      "default": "default"
+    },
+    "separator": {
+      "type": "string",
+      "title": "Separator",
+      "description": "Separator between widgets: pipe (│), dot (·), arrow (›) or space (two spaces).",
+      "options": ["pipe", "dot", "arrow", "space"],
+      "default": "pipe"
+    },
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the rate limit labels and reset countdown: en (5h, 7d, 1d 2h) or ko (5시간, 7일, 1일 2시간). auto uses Korean when LC_ALL, LC_MESSAGES or LANG starts with ko, and English otherwise.",
+      "options": ["auto", "en", "ko"],
+      "default": "auto"
+    },
+    "contextBarWidth": {
+      "type": "number",
+      "title": "Context bar width",
+      "description": "Number of cells in the context usage bar, a whole number from 1 to 40. Values outside 1-40 or with a fraction fall back to 8.",
+      "default": 8
+    }
+  }
 }
