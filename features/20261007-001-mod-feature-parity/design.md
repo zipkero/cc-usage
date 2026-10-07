@@ -162,7 +162,7 @@ flowchart TD
 - 색은 §3 테마 표의 역할을 쓴다(SPEC §5.4).
 - `model`: Model 색으로 기호 + ID(기호 표는 v0.6.2와 같다).
 - `context`: 막대 칸 수는 `Settings.contextBarWidth`, 채운 칸은 `round(percent/100*width)`를 0..width로 자른 값(SPEC §5.7).
-  채운 칸과 퍼센트는 퍼센트 색, 빈 칸은 BarEmpty 색, 토큰 수는 256K 이상 Warning·512K 이상 Danger·그 밖 기본색이다.
+  채운 칸과 퍼센트는 퍼센트 색, 빈 칸은 BarEmpty 색, 토큰 수는 256K 이상 Warning·512K 이상 Danger·그 밖 Secondary다(Go 판은 기본색이지만 테마 색 사이에서 혼자 튀어 0.7.1에서 바꿨다).
   `percent`가 아직 없으면 빈 막대 + Secondary·dim `-`를 그린다.
 - `cost`: Accent 색 `$x.xx`.
 - rate limit 셋: Secondary 라벨 + `: ` + 퍼센트 색 `floor(percentUsed)%` + dim ` (남은 시간)`.

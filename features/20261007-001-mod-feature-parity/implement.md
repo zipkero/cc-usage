@@ -74,7 +74,7 @@
       - Go 판에서 Dim이던 부분은 `dimColor`로 그려진다.
       - 화면 테스트에서 테마 설정을 바꾸면 각 위젯 Text의 `color`가 그 테마의 역할 색으로 바뀐다.
       - 퍼센트 50은 safe, 51과 80은 warning, 81은 danger 색이며, 이 기준이 컨텍스트 퍼센트와 막대의 채운 칸, `5h`·`7d`·spend 퍼센트에 똑같이 적용된다.
-      - 컨텍스트 토큰 수는 256K 이상이면 warning, 512K 이상이면 danger, 그 밖에는 기본색이다.
+      - 컨텍스트 토큰 수는 256K 이상이면 warning, 512K 이상이면 danger, 그 밖에는 secondary 색이다(0.7.1에서 Go 판의 기본색 대신 secondary로 바꿈, 사용자 결정 2026-10-07).
       - `plugin.json`의 `userConfig`에 `theme`이 8종 `options`와 기본 `default`를 가진 string 필드로 있다.
       - 위 동작은 순수 함수 테스트와 `$.ui.mount` 화면 테스트가 실제 세션 없이 확인한다.
     - 확인:
@@ -155,7 +155,7 @@
   - 참조: SPEC §5.9, §5.13, §5.15 / DESIGN §2, §3, §5
   - 승인 근거: 2026-10-07 working tree — `claude plugin test ./src` 231 pass, validate·tsc 통과, Go `display_width.go`·`fitLineWidth` 대조와 표시폭·빼기·자르기 경계·좁은 `bodyColumns` 화면 테스트 확인, SPEC §5.13·§5.15 성립
 
-- [ ] task-009: 새 버전 marketplace 배포
+- [x] task-009: 새 버전 marketplace 배포
   - 목적: marketplace 배포 브랜치(`release`)에 이번 기능이 담긴 새 버전이 올라가 `/plugin`이 업데이트를 감지할 수 있다.
   - 접근: `plugin.json`의 `version`을 0.7.0으로 올리고 프로젝트 `CLAUDE.md` §배포 절차대로 `release`에 `plugin.json`·`hooks/`·`LICENSE`를 복사해 commit하며, `origin` push는 task-001~008이 모두 승인되고 검증 명령이 통과하면 사용자 사전 승인(2026-10-07)에 따라 확인 없이 한다.
     프로젝트 `CLAUDE.md` §구조의 파일 나열을 실제 파일과 맞춘다.
@@ -170,6 +170,7 @@
       - 정적검사: `release` 체크아웃에서 `claude plugin validate`가 오류 없이 통과한다.
       - diff: 프로젝트 `CLAUDE.md` §구조와 `src/` 파일 목록 대조.
   - 참조: SPEC §5.14 / DESIGN §4
+  - 승인 근거: 2026-10-07 bb30628 (release 128ee80) — hooks·plugin.json diff 비어 있음, release 트리에 테스트 없음·marketplace.json·README.md 유지, release 체크아웃 validate 통과, CLAUDE.md §구조와 `src/` 일치
 
 - [ ] task-010: 실제 터미널에서 업데이트 로드와 band 렌더 확인
   - 목적: 사용자가 Claude Code에서 `/plugin update` 후 `/reload-plugins`를 실행하면 새 버전이 로드되고, 실제 터미널 band에 테마 색과 폭 맞춤이 의도대로 그려진다.

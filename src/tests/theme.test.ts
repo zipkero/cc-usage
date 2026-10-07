@@ -80,8 +80,8 @@ describe('percentRole', () => {
 })
 
 describe('tokenRole', () => {
-  test('256K 이상 warning, 512K 이상 danger, 그 밖에는 기본색', () => {
-    expect([255_999, 256_000, 511_999, 512_000].map(tokenRole)).toEqual([null, 'warning', 'warning', 'danger'])
+  test('256K 이상 warning, 512K 이상 danger, 그 밖에는 secondary', () => {
+    expect([255_999, 256_000, 511_999, 512_000].map(tokenRole)).toEqual(['secondary', 'warning', 'warning', 'danger'])
   })
 })
 
@@ -140,7 +140,7 @@ describe('위젯 색', () => {
         { text: '░░░░░', ...styled(theme, 'barEmpty') },
         { text: ' ' },
         { text: '40%', ...styled(theme, 'safe') },
-        { text: ' 80K' },
+        { text: ' 80K', ...styled(theme, 'secondary') },
       ])
       // Go 판에서 Dim이던 남은 시간 괄호는 색 없이 dimColor다
       expect(renderWidget('rateLimit5h', s, st)).toEqual([
@@ -201,8 +201,8 @@ describe('컨텍스트 토큰 색', () => {
     renderWidget('context', snap(10, 0, tokens), settingsFor(theme))!.at(-1) as Part
 
   for (const theme of ['default', 'gruvbox'] as const) {
-    test(`${theme}: 256K 미만 기본색, 256K 이상 warning, 512K 이상 danger`, () => {
-      expect(tokenPart(255_999, theme)).toEqual({ text: ' 256K' })
+    test(`${theme}: 256K 미만 secondary, 256K 이상 warning, 512K 이상 danger`, () => {
+      expect(tokenPart(255_999, theme)).toEqual({ text: ' 256K', ...styled(theme, 'secondary') })
       expect(tokenPart(256_000, theme)).toEqual({ text: ' 256K', ...styled(theme, 'warning') })
       expect(tokenPart(511_999, theme)).toEqual({ text: ' 512K', ...styled(theme, 'warning') })
       expect(tokenPart(512_000, theme)).toEqual({ text: ' 512K', ...styled(theme, 'danger') })

@@ -99,6 +99,18 @@ test('설정을 주지 않으면 v0.6.2와 같은 한 줄로 그린다', async (
   ])
 })
 
+test('로드 때 먼저 그려진 뒤 session.start가 끝나면 band를 다시 그린다', async ($, on) => {
+  stubSession(on)
+  // 데이터가 오기 전 첫 render는 next(e)로 비키므로 엔진 자리의 이 응답이 그려진다
+  on('ui.render', async () => ({ type: 'Text', children: ['engine band'] }))
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  expect(textOf(await ui.drawn())).toBe('engine band')
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  expect(rows(await ui.drawn())).toEqual([
+    'cc-usage (main) │ ◆ claude-opus-5-5 │ ███░░░░░ 40% 80K │ $1.23 │ 5h: 12% │ 7d: 34% │ spend: 56%',
+  ])
+})
+
 test('layout이 여러 줄이면 그 줄 수만큼 행으로 그린다', { options: { layout: 'NM|C$|R7L' } }, async ($, on) => {
   stubSession(on)
   const ui = await mountBand($)

@@ -116,7 +116,7 @@ describe('컨텍스트 막대 칸 수', () => {
       return parts.slice(parts.findIndex((p) => p.text === ' '))
     }
     expect(tail(1)).toEqual(tail(8))
-    expect(tail(40)).toEqual([{ text: ' ' }, { text: '40%', ...THEMES.default.safe }, { text: ' 80K' }])
+    expect(tail(40)).toEqual([{ text: ' ' }, { text: '40%', ...THEMES.default.safe }, { text: ' 80K', ...THEMES.default.secondary }])
   })
 
   test('퍼센트가 아직 없으면 그 폭의 빈 막대와 흐린 -다', () => {
