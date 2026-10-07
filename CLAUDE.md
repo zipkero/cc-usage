@@ -16,7 +16,14 @@ src/                          plugin 루트 (--plugin-dir ./src)
   .claude-plugin/plugin.json  manifest (name: cc-usage-mod)
   .claude-plugin/types/       Claude Code가 로드할 때 생성하는 버전별 타입 선언 (git ignored)
   hooks/hooks.json            modules: ["./register.ts"]
-  hooks/register.ts           hooks module — 데이터 수집과 AbovePrompt band 렌더
+  hooks/register.ts           hooks module — $ 호출·hook 등록·세션 상태, AbovePrompt band 렌더
+  hooks/settings.ts           userConfig(options) → 설정 해석, layout·disabledWidgets 파싱
+  hooks/widgets.ts            스냅샷 + 설정 → 위젯별 Text 조각과 줄 구성
+  hooks/themes.ts             테마 8종의 역할별 색 표, 퍼센트 색 판정
+  hooks/i18n.ts               en/ko 라벨·시간 단위, 로캘 판정, 남은 시간 포맷
+  hooks/width.ts              표시폭 계산과 band 폭에 맞춘 줄 맞춤
+  hooks/paths.ts              홈 압축·경로 줄이기·디렉토리 이름, remote URL → owner/name
+  tests/*.test.ts             claude plugin test 대상 — 순수 계층 함수 테스트와 band 화면 테스트 (release에 복사하지 않는다)
   tsconfig.json               생성된 타입 선언을 extends
 ```
 
