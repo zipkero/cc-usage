@@ -1,0 +1,186 @@
+<!-- prowl-workflow: v1 -->
+# mod-feature-parity 구현
+
+- [x] task-001: 줄별 위젯 배치와 위젯 끄기 설정
+  - 목적: 사용자가 플러그인 설정의 `layout`에 preset 문자나 위젯 ID로 줄별 구성을 적으면 band가 그 줄 수·순서대로 그려지고, `disabledWidgets`에 적은 위젯은 빠지며, 아무것도 바꾸지 않으면 v0.6.2와 같은 항목·순서로 그려진다.
+  - 접근: 고정 세그먼트 조립을 `$` 없는 순수 함수(설정 해석, 배치 파싱, 위젯 렌더, 줄 조립)로 옮기고, `register`가 받은 `options`로 만든 설정에 따라 줄마다 한 행인 column band를 그린다.
+    plugin `userConfig`에 `layout`(기본 `NMC$R7L`)과 `disabledWidgets`(기본 빈 문자열)를 더하고, spend 위젯을 `L`·`spendLimit`으로 지정할 수 있게 한다.
+  - 검증 조건:
+    - 결과:
+      - 설정을 주지 않고(manifest 기본값) 마운트한 band가 한 줄에 프로젝트 디렉토리 이름(브랜치) │ 모델 │ 컨텍스트 │ 비용 │ 5h │ 7d │ spend 순서로 그려진다.
+      - `layout` 해석은 `|`로 줄을 나누고, 줄 안의 쉼표·공백 토큰이 위젯 ID와 같으면 그 위젯으로, 아니면 각 문자를 preset 문자(`P N G M C $ R 7 L`)로 읽는다.
+      - `PMC$|R7L`, `projectInfo, model | rateLimit5h rateLimit7d`, `N model C`가 각각 적은 줄·순서의 위젯 목록으로 해석된다.
+      - 모르는 문자, Go 판에서 버린 문자 `f T E #`, 금지 문자 `S V a D B H F`는 무시되고, 위젯이 없는 줄은 버려지며, 남은 줄이 없으면 기본 배치 `NMC$R7L`이 쓰인다.
+      - `layout`이 두 줄 이상이면 band가 그 줄 수만큼의 행으로 그려지고 각 행의 위젯 순서가 설정과 같다.
+      - `disabledWidgets`에 문자나 ID로 적은 위젯은 `layout`에 있어도 band에 나타나지 않는다.
+      - 끈 뒤 위젯이 남지 않은 줄은 그려지지 않고, 그려질 줄이 하나도 없으면 band가 그려지지 않는다.
+      - `plugin.json`의 `userConfig`에 `layout`·`disabledWidgets`가 `title`·`description`을 가진 string 필드로 있고, `description`에 문자 표, 위젯 ID, `|`·쉼표 규칙이 적혀 있다.
+      - 위 동작은 순수 함수 테스트와 `$.ui.mount` 화면 테스트가 실제 세션 없이 `session.*`·`process.run` stub으로 확인한다.
+    - 확인:
+      - 테스트: `claude plugin test ./src`가 배치 파싱 경계, 끄기, 기본 배치 화면, 여러 줄 화면 테스트를 포함해 실패 없이 통과한다.
+      - 빌드·정적검사: `claude plugin validate ./src`와 `tsc -p src --noEmit`이 오류 없이 통과한다.
+      - diff: `src/.claude-plugin/plugin.json`의 `userConfig` 항목.
+  - 참조: SPEC §5.1, §5.2, §5.3, §5.13, §5.15 / DESIGN §1, §2, §3, §5
+  - 승인 근거: 2026-10-07 working tree — `claude plugin test ./src` 24 pass, validate·tsc 통과, 배치 파싱·끄기·기본 배치·여러 줄 화면 테스트 확인
+
+- [x] task-002: 프로젝트·저장소 위젯과 셸 `cd`에 흔들리지 않는 프로젝트 칸
+  - 목적: 배치에 `projectInfo`·`projectName`·`repoInfo`를 넣으면 각각 홈을 `~`로 줄인 프로젝트 경로와 브랜치, 프로젝트 디렉토리 이름과 브랜치, `origin` remote의 `owner/name`이 보이고, Bash에서 `cd`로 하위 디렉토리에 들어가도 프로젝트 칸이 바뀌지 않는다.
+  - 접근: 홈 압축, 경로 줄이기, 디렉토리 이름, remote URL 파싱을 순수 함수로 두고, 세션 시작 때 홈 환경변수를 리터럴 이름으로 읽으며, `repoInfo`가 배치에 있을 때만 `$.session.repo()`를 부른다.
+    브랜치를 못 읽으면 진단 문자열 없이 브랜치 괄호만 생략한다.
+  - 검증 조건:
+    - 결과:
+      - `projectInfo`는 홈 자체인 root를 `~`로, 홈 아래 root를 `~/…`로 보이고 뒤에 ` (브랜치)`를 붙인다.
+      - `projectInfo` 경로가 50자를 넘으면 `<head>/…/<base>`로, 그래도 넘으면 base만 보인다.
+      - `/`·`\` 구분자가 섞이거나 드라이브 문자 대소문자가 다른 Windows 경로도 홈 압축된다.
+      - 홈 환경변수(`HOME`, `USERPROFILE`)가 없으면 경로를 압축하지 않고 그대로 보인다.
+      - `projectName`은 root 디렉토리 이름과 ` (브랜치)`를 보인다.
+      - 브랜치가 비거나 git이 비0 종료·거부되면 두 위젯 모두 괄호 없이 이름·경로만 보이고, `(git: …)` 같은 오류 문자열은 band에 나오지 않는다.
+      - `repoInfo`는 `https://host/owner/name(.git)`, `git@host:owner/name(.git)`, `ssh://…/owner/name(.git)` 형태의 remote에서 `owner/name`을 보인다.
+      - remote가 null이거나 `owner/name`을 뽑을 수 없거나 `$.session.repo()`가 거부되면 `repoInfo`는 생략되고 나머지 위젯은 그대로 그려진다.
+      - `repoInfo`가 유효 배치에 없으면 `$.session.repo()`를 부르지 않는다.
+      - `layout`에 `P`·`N`·`G` 문자나 해당 ID를 적으면 band에 그 위젯이 적은 순서로 그려진다.
+      - `session.root` stub이 고정되고 `session.cwd` stub이 하위 디렉토리를 돌려줘도 프로젝트 칸의 이름·경로·브랜치가 root 기준이며, 브랜치용 `process.run`의 `cwd`가 root다.
+      - 위 동작은 순수 함수 테스트와 `$.ui.mount` 화면 테스트가 실제 세션 없이 stub으로 확인한다.
+    - 확인:
+      - 테스트: `claude plugin test ./src`가 경로·remote 파싱 경계, 세 위젯 화면, `process.run` 인자 기록 테스트를 포함해 실패 없이 통과한다.
+      - 빌드·정적검사: `claude plugin validate ./src`와 `tsc -p src --noEmit`이 오류 없이 통과한다.
+  - 참조: SPEC §5.2, §5.10, §5.11, §5.13, §5.15 / DESIGN §1, §2, §3, §5
+  - 승인 근거: 2026-10-07 working tree — `claude plugin test ./src` 57 pass, validate·tsc 통과, 경로·remote 파싱 경계와 root 기준 `process.run` cwd 화면 테스트 확인
+
+- [x] task-003: 브랜치 조회 `git` 실행 빈도 제한
+  - 목적: 턴 종료, 30초 주기 갱신, 세션 시작이 잇따라 와도 같은 프로젝트에서 브랜치용 `git`은 5초 안에 한 번을 넘지 않고, 브랜치를 쓰는 위젯이 배치에 없으면 `git`을 실행하지 않는다.
+  - 접근: root별 메모리 캐시 항목 하나(`{ branch, repoSlug, checkedAt, pending }`)를 `$.clock.now()` 기준 TTL 5초로 두고 모든 갱신 경로가 이를 거치게 하며, `$.session.repo()` 조회도 같은 항목·진행 중 호출 안에서 같은 시점·TTL을 따른다.
+  - 검증 조건:
+    - 결과:
+      - mock clock으로 5초 안에 갱신 경로가 여러 번 돌아도 같은 root의 `git` `process.run` 호출은 1회이고, 5초가 지난 뒤 갱신에서 1회 더 돈다.
+      - 동시에 들어온 갱신은 진행 중인 `git` 호출 하나를 함께 기다리고 호출을 늘리지 않는다.
+      - `git`이 비0 종료·거부·타임아웃이면 빈 브랜치로 남고 5초 안에는 다시 실행하지 않는다.
+      - `projectInfo`·`projectName`이 끈 위젯을 뺀 유효 배치에 하나도 없으면 `process.run`이 불리지 않는다.
+      - `repoInfo`가 배치에 있을 때 `$.session.repo()` 호출도 같은 root에서 5초 안에 1회다.
+      - 브랜치 stub 값을 바꾸고 5초가 지난 뒤 갱신이 오면 band에 새 브랜치가 보인다.
+    - 확인:
+      - 테스트: `claude plugin test ./src`가 mock clock과 `process.run`·`session.repo` 호출 수를 세는 테스트를 포함해 실패 없이 통과한다.
+      - 빌드·정적검사: `claude plugin validate ./src`와 `tsc -p src --noEmit`이 오류 없이 통과한다.
+  - 참조: SPEC §5.12, §5.13 / DESIGN §2, §3, §5
+  - 승인 근거: 2026-10-07 working tree — `claude plugin test ./src` 64 pass, validate·tsc 통과, mock clock 4999/5000ms 경계·동시 갱신 공유·미배치 시 `process.run` 0회 테스트 확인
+
+- [x] task-004: 테마 8종과 퍼센트 색 기준
+  - 목적: 사용자가 플러그인 설정에서 테마를 `default`·`minimal`·`catppuccin`·`dracula`·`gruvbox`·`nord`·`tokyoNight`·`solarized` 중 하나로 고르면 band의 위젯별 색이 그 테마 색으로 바뀌고, 컨텍스트와 rate limit 퍼센트는 50 이하 안전·80 이하 경고·그 초과 위험 색으로 그려진다.
+  - 접근: Go `render.go`의 테마 역할별 색을 hex와 기본 색 이름 표로 옮기고 위젯 렌더가 역할로 색을 고르게 하며, plugin `userConfig`에 `theme`(선택지 8종, 기본 `default`)을 더한다.
+  - 검증 조건:
+    - 결과:
+      - 8종 테마마다 model, folder, branch, safe, warning, danger, secondary, accent, barEmpty 역할 색이 Go 판 값과 같다.
+        truecolor 6종은 같은 R;G;B의 `#rrggbb`, `default`는 256색 코드의 xterm hex(117 `#87d7ff`, 222 `#ffd787`, 218 `#ffafd7`, 151 `#afd7af`, 210 `#ff8787`, 249 `#b2b2b2`, 240 `#585858`), `minimal`은 `white`·`gray`·bold `white`다.
+      - Go 판에서 Dim이던 부분은 `dimColor`로 그려진다.
+      - 화면 테스트에서 테마 설정을 바꾸면 각 위젯 Text의 `color`가 그 테마의 역할 색으로 바뀐다.
+      - 퍼센트 50은 safe, 51과 80은 warning, 81은 danger 색이며, 이 기준이 컨텍스트 퍼센트와 막대의 채운 칸, `5h`·`7d`·spend 퍼센트에 똑같이 적용된다.
+      - 컨텍스트 토큰 수는 256K 이상이면 warning, 512K 이상이면 danger, 그 밖에는 기본색이다.
+      - `plugin.json`의 `userConfig`에 `theme`이 8종 `options`와 기본 `default`를 가진 string 필드로 있다.
+      - 위 동작은 순수 함수 테스트와 `$.ui.mount` 화면 테스트가 실제 세션 없이 확인한다.
+    - 확인:
+      - 테스트: `claude plugin test ./src`가 테마 8종 역할 색 표, 퍼센트 경계 50/51/80/81, 테마별 화면 테스트를 포함해 실패 없이 통과한다.
+      - 빌드·정적검사: `claude plugin validate ./src`와 `tsc -p src --noEmit`이 오류 없이 통과한다.
+      - diff: `src/.claude-plugin/plugin.json`의 `theme` 항목.
+  - 참조: SPEC §5.4, §5.8, §5.13, §5.15 / DESIGN §2, §3, §5
+  - 승인 근거: 2026-10-07 working tree — `claude plugin test ./src` 112 pass, validate·tsc 통과, Go `render.go` 역할 색 대조와 퍼센트 경계 50/51/80/81·테마 8종 화면 테스트 확인
+
+- [x] task-005: 위젯 구분자 선택
+  - 목적: 사용자가 플러그인 설정에서 구분자를 `pipe`·`dot`·`arrow`·`space` 중 하나로 고르면 band의 위젯 사이가 `│`·`·`·`›`·공백으로 바뀐다.
+  - 접근: 구분자 이름을 조각으로 바꾸는 표를 순수 계층에 두고 줄 조립이 설정값을 쓰게 하며, plugin `userConfig`에 `separator`(선택지 4종, 기본 `pipe`)를 더한다.
+  - 검증 조건:
+    - 결과:
+      - `pipe`는 ` │ `, `dot`은 ` · `, `arrow`는 ` › `, `space`는 공백 두 칸으로 위젯 사이에 들어간다.
+      - `pipe`·`dot`·`arrow`는 기호 조각만 `dimColor`로 그려진다.
+      - 줄 끝과 줄 처음에는 구분자가 붙지 않는다.
+      - `plugin.json`의 `userConfig`에 `separator`가 4종 `options`와 기본 `pipe`를 가진 string 필드로 있다.
+      - 위 동작은 순수 함수 테스트와 `$.ui.mount` 화면 테스트가 실제 세션 없이 확인한다.
+    - 확인:
+      - 테스트: `claude plugin test ./src`가 구분자 4종 테스트를 포함해 실패 없이 통과한다.
+      - 빌드·정적검사: `claude plugin validate ./src`와 `tsc -p src --noEmit`이 오류 없이 통과한다.
+  - 참조: SPEC §5.5, §5.13, §5.15 / DESIGN §2, §3
+  - 승인 근거: 2026-10-07 working tree — `claude plugin test ./src` 122 pass, validate·tsc 통과, Go `renderSeparator` 대조와 구분자 4종 순수·화면 테스트 확인
+
+- [x] task-006: rate limit 라벨과 남은 시간의 한국어·영어 표시
+  - 목적: 사용자가 언어를 `ko`로 고르면 rate limit 라벨과 리셋까지 남은 시간이 `5시간`·`7일`과 `일`·`시간`·`분`으로, `en`이면 `5h`·`7d`와 `d`·`h`·`m`으로 보이고, `auto`면 로캘 환경변수가 한국어일 때 한국어로 보인다.
+  - 접근: en/ko 라벨·시간 단위 표와 로캘 판정, 남은 시간 포맷을 순수 함수로 두고, 세션 시작 때 `LC_ALL`·`LC_MESSAGES`·`LANG`을 리터럴 이름으로 읽으며, 남은 시간은 `$.clock.now()` 기준으로 잰다.
+    plugin `userConfig`에 `language`(선택지 `auto`·`en`·`ko`, 기본 `auto`)를 더한다.
+  - 검증 조건:
+    - 결과:
+      - `ko`에서 rate limit 라벨이 `5시간`·`7일`이고, 남은 시간이 `1일 2시간`, `3시간4분`, `5분` 형태다.
+      - `en`에서 라벨이 `5h`·`7d`이고, 남은 시간이 `1d 2h`, `3h4m`, `5m` 형태다.
+      - 남은 시간이 1분 미만이거나 리셋 시각이 지났으면 남은 시간 괄호가 생략된다.
+      - `auto`에서 `LC_ALL`, `LC_MESSAGES`, `LANG` 중 하나라도 `ko`로 시작하면 한국어, 그렇지 않거나 셋 다 없으면 영어다.
+      - `plugin.json`의 `userConfig`에 `language`가 `auto`·`en`·`ko` `options`와 기본 `auto`를 가진 string 필드로 있다.
+      - 위 동작은 순수 함수 테스트와 `mock.env`·`mock.clock`을 건 `$.ui.mount` 화면 테스트가 실제 세션 없이 확인한다.
+    - 확인:
+      - 테스트: `claude plugin test ./src`가 로캘 판정 조합, 두 언어의 시간 포맷 경계, 언어별 화면 테스트를 포함해 실패 없이 통과한다.
+      - 빌드·정적검사: `claude plugin validate ./src`(환경변수 이름 나열 포함)와 `tsc -p src --noEmit`이 오류 없이 통과한다.
+  - 참조: SPEC §5.6, §5.13, §5.15 / DESIGN §2, §3
+  - 승인 근거: 2026-10-07 working tree — `claude plugin test ./src` 166 pass, validate(로캘 env 이름 나열)·tsc 통과, Go locale·`format.go` 대조와 로캘 판정·시간 포맷·언어별 화면 테스트 확인
+
+- [x] task-007: 컨텍스트 막대 폭 설정
+  - 목적: 사용자가 컨텍스트 막대 폭을 1–40 사이로 지정하면 막대가 그 칸 수로 그려지고, 범위 밖이나 정수가 아닌 값이면 8칸으로 그려지며 나머지 band는 그대로다.
+  - 접근: 설정 해석이 `contextBarWidth`를 항목 단위로 검증하고 컨텍스트 위젯이 그 폭으로 막대를 그리며, plugin `userConfig`에 `contextBarWidth`(number, 기본 8, `min`·`max` 미선언)를 더한다.
+  - 검증 조건:
+    - 결과:
+      - 폭 1, 8, 40에서 막대의 `█`와 `░` 칸 수 합이 각각 그 값이다.
+      - 폭 0, 41, -1, 2.5에서 막대가 8칸이고, 같은 설정의 다른 항목(배치·테마 등)은 기본값으로 돌아가지 않는다.
+      - 채운 칸 수는 `round(percent/100*폭)`을 0..폭으로 자른 값이다.
+      - 퍼센트가 아직 없으면 빈 막대와 흐린 `-`가 그려진다.
+      - `plugin.json`의 `userConfig`에 `contextBarWidth`가 기본 8인 number 필드로 있고 `min`·`max`가 없으며, `description`에 1–40 범위와 범위 밖이면 8이라는 것이 적혀 있다.
+      - 위 동작은 순수 함수 테스트와 `$.ui.mount` 화면 테스트가 실제 세션 없이 확인한다.
+    - 확인:
+      - 테스트: `claude plugin test ./src`가 폭 경계값과 범위 밖 값 테스트를 포함해 실패 없이 통과한다.
+      - 빌드·정적검사: `claude plugin validate ./src`와 `tsc -p src --noEmit`이 오류 없이 통과한다.
+  - 참조: SPEC §5.7, §5.13, §5.15 / DESIGN §2, §3, §5
+  - 승인 근거: 2026-10-07 working tree — `claude plugin test ./src` 184 pass, validate·tsc 통과, 폭 1/8/40·범위 밖 0/41/-1/2.5·반올림 경계·placeholder 순수·화면 테스트 확인
+
+- [x] task-008: band 폭 맞춤과 표시폭 계산
+  - 목적: 한 줄이 band 폭보다 길면 오른쪽 위젯부터 빠지고, 하나만 남아도 넘치면 표시폭 기준으로 잘려 `…`로 끝나며, 한글·CJK 문자는 2칸으로 계산된다.
+  - 접근: Go `display_width.go` 범위표를 옮긴 표시폭 계산과 줄 맞춤을 순수 함수로 두고, 렌더가 줄마다 `bodyColumns - 1` 예산으로 맞춘 뒤 바깥 Text에 `wrap: 'truncate-end'`를 둔다.
+    `buildLines`의 예산은 선택 인자(기본 `Infinity`, 맞추지 않음)이고 렌더 경로는 늘 예산을 넘긴다.
+  - 검증 조건:
+    - 결과:
+      - 표시폭은 한글·CJK·Kana·전각·주요 emoji가 2칸, 제어문자가 0칸, `◆ █ ░ │ › · …`를 포함한 나머지가 1칸이다.
+      - 줄 표시폭이 예산 이하면 그대로 그려진다.
+      - 예산을 넘으면 오른쪽 위젯부터 앞 구분자와 함께 하나씩 빠지고, 남은 줄 표시폭이 예산 이하가 되는 순간 멈춘다.
+      - 위젯이 하나만 남아도 넘치면 `예산-1`칸 안에 들어가는 앞부분과 `…`만 남고, 2칸 문자는 반으로 잘리지 않는다.
+      - 여러 줄 배치에서 각 줄이 따로 맞춰진다.
+      - 화면 테스트에서 좁은 `bodyColumns`로 마운트하면 위 규칙대로 위젯이 빠지거나 잘리고, 각 줄의 바깥 Text가 `wrap: 'truncate-end'`를 가진다.
+      - 한국어 라벨을 쓰는 줄도 2칸 계산으로 맞춰진다.
+      - 위 동작은 순수 함수 테스트와 `$.ui.mount` 화면 테스트가 실제 세션 없이 확인한다.
+    - 확인:
+      - 테스트: `claude plugin test ./src`가 표시폭 범위, 빼기·자르기 경계, 좁은 폭 화면 테스트를 포함해 실패 없이 통과한다.
+      - 빌드·정적검사: `claude plugin validate ./src`와 `tsc -p src --noEmit`이 오류 없이 통과한다.
+  - 참조: SPEC §5.9, §5.13, §5.15 / DESIGN §2, §3, §5
+  - 승인 근거: 2026-10-07 working tree — `claude plugin test ./src` 231 pass, validate·tsc 통과, Go `display_width.go`·`fitLineWidth` 대조와 표시폭·빼기·자르기 경계·좁은 `bodyColumns` 화면 테스트 확인, SPEC §5.13·§5.15 성립
+
+- [ ] task-009: 새 버전 marketplace 배포
+  - 목적: marketplace 배포 브랜치(`release`)에 이번 기능이 담긴 새 버전이 올라가 `/plugin`이 업데이트를 감지할 수 있다.
+  - 접근: `plugin.json`의 `version`을 0.7.0으로 올리고 프로젝트 `CLAUDE.md` §배포 절차대로 `release`에 `plugin.json`·`hooks/`·`LICENSE`를 복사해 commit하며, `origin` push는 task-001~008이 모두 승인되고 검증 명령이 통과하면 사용자 사전 승인(2026-10-07)에 따라 확인 없이 한다.
+    프로젝트 `CLAUDE.md` §구조의 파일 나열을 실제 파일과 맞춘다.
+  - 검증 조건:
+    - 결과:
+      - `src/.claude-plugin/plugin.json`의 `version`이 0.7.0이다.
+      - `origin/release`의 `.claude-plugin/plugin.json`이 `src/.claude-plugin/plugin.json`과 같고, `hooks/`가 `src/hooks/`와 같으며, 테스트 파일은 없다.
+      - `origin/release`의 `.claude-plugin/marketplace.json`과 배포용 `README.md`는 남아 있다.
+      - 프로젝트 `CLAUDE.md` §구조가 새 순수 계층 파일과 테스트 디렉토리를 포함해 실제 `src/` 구성과 맞다.
+    - 확인:
+      - diff: `git diff main:src/hooks origin/release:hooks`와 `git diff main:src/.claude-plugin/plugin.json origin/release:.claude-plugin/plugin.json`이 비어 있고, `git ls-tree -r origin/release`에 테스트 파일이 없으며 `marketplace.json`과 `README.md`가 있다.
+      - 정적검사: `release` 체크아웃에서 `claude plugin validate`가 오류 없이 통과한다.
+      - diff: 프로젝트 `CLAUDE.md` §구조와 `src/` 파일 목록 대조.
+  - 참조: SPEC §5.14 / DESIGN §4
+
+- [ ] task-010: 실제 터미널에서 업데이트 로드와 band 렌더 확인
+  - 목적: 사용자가 Claude Code에서 `/plugin update` 후 `/reload-plugins`를 실행하면 새 버전이 로드되고, 실제 터미널 band에 테마 색과 폭 맞춤이 의도대로 그려진다.
+  - 접근: 사람이 marketplace 설치본을 업데이트·재로드한 뒤 `/config`에서 설정을 바꾸고 터미널 폭을 줄여 가며 band를 본다.
+  - 검증 조건:
+    - 결과:
+      - `/plugin update`와 `/reload-plugins` 뒤 `/plugin`에 보이는 cc-usage 버전이 올린 `version`이고, 설정을 바꾸지 않은 band가 프로젝트 이름(브랜치) │ 모델 │ 컨텍스트 │ 비용 │ 5h │ 7d │ spend 순서로 그려진다.
+      - `/config`의 플러그인 설정에 `layout`·`disabledWidgets`·`theme`·`separator`·`language`·`contextBarWidth` 행이 보이고, 값을 바꾸면 재로드 뒤 band에 반영된다.
+      - `default`와 truecolor 테마 하나 이상(예: `dracula`)에서 hex 색이 역할별로 구분되어 칠해지고 기본색이나 무색으로 떨어지지 않는다.
+      - 터미널 폭을 줄이면 오른쪽 위젯부터 빠지고, 위젯 하나가 남아 넘치면 줄이 `…`로 끝나며 다음 행으로 넘어가지 않는다.
+      - 언어 `ko`에서 한국어 라벨이 든 줄도 폭을 줄였을 때 다음 행으로 넘어가지 않는다.
+    - 확인:
+      - 수동 확인: 사람이 실제 터미널의 Claude Code에서 위 항목을 보고 관찰 결과(가능하면 스크린샷)를 남긴다.
+  - 참조: SPEC §5.14 / DESIGN §5
