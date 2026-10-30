@@ -570,7 +570,7 @@ test('퍼센트가 아직 없으면 화면에 설정 폭의 빈 막대와 흐린
 
 // band 폭 맞춤 (SPEC §5.9): 줄마다 bodyColumns - 1(왼쪽 여백 1칸) 표시폭 안에 들어가게 그린다
 
-// 기본 배치 한 줄의 표시폭은 95칸이고, 오른쪽 위젯을 하나씩 빼면 82·72·62·54·35·15칸이다
+// 기본 배치 한 줄의 표시폭은 95칸이다 — 위젯 폭은 15·17·16·5·7·7·10칸이고 구분자는 3칸이다
 const DEFAULT_ROW = 'cc-usage (main) │ ◆ claude-opus-5-5 │ ███░░░░░ 40% 80K │ $1.23 │ 5h: 12% │ 7d: 34% │ spend: 56%'
 
 // 줄마다 바깥 Text의 wrap — 표시폭 계산이 빗나가도 다음 행으로 넘어가지 않게 하는 안전망이다
@@ -580,57 +580,64 @@ function rowWraps(tree: RenderElement): unknown[] {
   )
 }
 
-const FIT_CASES: [number, string][] = [
-  [96, DEFAULT_ROW],
-  [95, 'cc-usage (main) │ ◆ claude-opus-5-5 │ ███░░░░░ 40% 80K │ $1.23 │ 5h: 12% │ 7d: 34%'],
-  [83, 'cc-usage (main) │ ◆ claude-opus-5-5 │ ███░░░░░ 40% 80K │ $1.23 │ 5h: 12% │ 7d: 34%'],
-  [82, 'cc-usage (main) │ ◆ claude-opus-5-5 │ ███░░░░░ 40% 80K │ $1.23 │ 5h: 12%'],
-  [36, 'cc-usage (main) │ ◆ claude-opus-5-5'],
-  [35, 'cc-usage (main)'],
-  [16, 'cc-usage (main)'],
-  // 위젯 하나만 남아도 넘치면 13칸 + …로 자른다
-  [15, 'cc-usage (mai…'],
+const FIT_CASES: [number, string[]][] = [
+  [96, [DEFAULT_ROW]],
+  [95, ['cc-usage (main) │ ◆ claude-opus-5-5 │ ███░░░░░ 40% 80K │ $1.23 │ 5h: 12% │ 7d: 34%', 'spend: 56%']],
+  [82, ['cc-usage (main) │ ◆ claude-opus-5-5 │ ███░░░░░ 40% 80K │ $1.23 │ 5h: 12%', '7d: 34% │ spend: 56%']],
+  [36, ['cc-usage (main) │ ◆ claude-opus-5-5', '███░░░░░ 40% 80K │ $1.23 │ 5h: 12%', '7d: 34% │ spend: 56%']],
+  [35, ['cc-usage (main)', '◆ claude-opus-5-5', '███░░░░░ 40% 80K │ $1.23 │ 5h: 12%', '7d: 34% │ spend: 56%']],
+  // 예산보다 넓은 위젯은 혼자 한 줄에서 가운데를 줄인다 — 앞 7칸, …, 뒤 7칸
+  [16, ['cc-usage (main)', '◆ claud…pus-5-5', '███░░░░…40% 80K', '$1.23 │ 5h: 12%', '7d: 34%', 'spend: 56%']],
 ]
 
-for (const [bodyColumns, row] of FIT_CASES) {
-  test(`bodyColumns ${bodyColumns}이면 기본 배치가 ${JSON.stringify(row)}다`, async ($, on) => {
+for (const [bodyColumns, expected] of FIT_CASES) {
+  test(`bodyColumns ${bodyColumns}이면 기본 배치가 ${expected.length}줄로 나뉜다`, async ($, on) => {
     stubSession(on)
     const ui = await mountBand($, { bodyColumns })
     const tree = await ui.drawn()
-    expect(rows(tree)).toEqual([row])
-    expect(rowWraps(tree)).toEqual(['truncate-end'])
+    expect(rows(tree)).toEqual(expected)
+    expect(rowWraps(tree)).toEqual(expected.map(() => 'truncate-end'))
   })
 }
 
-test('잘린 위젯의 …는 잘린 조각의 색을 이어받는다', async ($, on) => {
+test('긴 프로젝트 이름과 브랜치는 가운데를 줄이고 …는 앞부분이 끊긴 조각의 색을 이어받는다', { options: { layout: 'N' } }, async ($, on) => {
   stubSession(on)
+  // 'cc-usage (main)' 15칸을 예산 14칸에 — 앞 7칸, …, 뒤 6칸
   const ui = await mountBand($, { bodyColumns: 15 })
-  expect(await styleOf(ui, 'cc-usage')).toEqual({ color: THEMES.default.folder.color, bold: undefined, dimColor: undefined })
-  expect(await styleOf(ui, ' (mai…')).toEqual({ color: THEMES.default.branch.color, bold: undefined, dimColor: undefined })
+  expect(rows(await ui.drawn())).toEqual(['cc-usag…(main)'])
+  expect(await styleOf(ui, 'cc-usag')).toEqual({ color: THEMES.default.folder.color, bold: undefined, dimColor: undefined })
+  expect(await styleOf(ui, '…')).toEqual({ color: THEMES.default.folder.color, bold: undefined, dimColor: undefined })
+  expect(await styleOf(ui, '(main)')).toEqual({ color: THEMES.default.branch.color, bold: undefined, dimColor: undefined })
 })
 
 test('여러 줄 배치는 줄마다 따로 맞추고 모든 줄이 truncate-end다', { options: { layout: 'NM|C$|R7L' } }, async ($, on) => {
   stubSession(on)
-  // 예산 29칸: 첫 줄(35칸)과 셋째 줄(30칸)만 넘친다
+  // 예산 29칸: 첫 줄(35칸)과 셋째 줄(30칸)만 넘쳐 마지막 위젯이 그 줄 아래로 넘어간다
   const ui = await mountBand($, { bodyColumns: 30 })
   const tree = await ui.drawn()
-  expect(rows(tree)).toEqual(['cc-usage (main)', '███░░░░░ 40% 80K │ $1.23', '5h: 12% │ 7d: 34%'])
-  expect(rowWraps(tree)).toEqual(['truncate-end', 'truncate-end', 'truncate-end'])
+  expect(rows(tree)).toEqual([
+    'cc-usage (main)',
+    '◆ claude-opus-5-5',
+    '███░░░░░ 40% 80K │ $1.23',
+    '5h: 12% │ 7d: 34%',
+    'spend: 56%',
+  ])
+  expect(rowWraps(tree)).toEqual(Array(5).fill('truncate-end'))
 })
 
-// 한국어 줄은 34칸이지만 문자 수로는 31자다 — 한글을 1칸으로 재면 예산 33칸에서 빠지지 않는다
-const KO_FIT_CASES: [number, string][] = [
-  [35, '5시간: 12% │ 7일: 34% │ spend: 56%'],
-  [34, '5시간: 12% │ 7일: 34%'],
-  // 5시간: 12%(10칸) 하나만 남아 넘치면 2칸 문자를 반으로 자르지 않는다 — 예산 3칸이면 5와 …뿐이다
-  [5, '5시…'],
-  [4, '5…'],
+// 한국어 줄은 34칸이지만 문자 수로는 31자다 — 한글을 1칸으로 재면 예산 33칸에서 넘기지 않는다
+const KO_FIT_CASES: [number, string[]][] = [
+  [35, ['5시간: 12% │ 7일: 34% │ spend: 56%']],
+  [34, ['5시간: 12% │ 7일: 34%', 'spend: 56%']],
+  // 위젯마다 혼자 넘치면 2칸 문자를 반으로 자르지 않는다 — 예산 4칸에서 앞 2칸에 시(2)가 들어가지 않아 남은 1칸은 뒤가 쓴다
+  [5, ['5…2%', '7…4%', 'sp…%']],
+  [4, ['5…%', '7…%', 's…%']],
 ]
 
-for (const [bodyColumns, row] of KO_FIT_CASES) {
-  test(`언어 ko에서 bodyColumns ${bodyColumns}이면 rate limit 줄이 ${JSON.stringify(row)}다`, { options: { language: 'ko', layout: 'R7L' } }, async ($, on) => {
+for (const [bodyColumns, expected] of KO_FIT_CASES) {
+  test(`언어 ko에서 bodyColumns ${bodyColumns}이면 rate limit 줄이 ${JSON.stringify(expected)}다`, { options: { language: 'ko', layout: 'R7L' } }, async ($, on) => {
     stubSession(on)
     const ui = await mountBand($, { bodyColumns })
-    expect(rows(await ui.drawn())).toEqual([row])
+    expect(rows(await ui.drawn())).toEqual(expected)
   })
 }
