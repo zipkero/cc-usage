@@ -5,7 +5,7 @@ import { formatTimeRemaining, type Language, TRANSLATIONS } from './i18n'
 import { baseName, compressHome, PATH_MAX, shrinkPath } from './paths'
 import type { SeparatorName, Settings, WidgetId } from './settings'
 import { percentRole, type Role, type Theme, THEMES, tokenRole } from './themes'
-import { fitLine } from './width'
+import { wrapLine } from './width'
 
 // session.measure 입력에는 startedAt이 없어 SessionUsage 전체를 담을 수 없다
 export type Figures = Pick<SessionUsage, 'context' | 'rateLimits' | 'cost'>
@@ -81,8 +81,8 @@ export function renderWidget(id: WidgetId, s: Snapshot, settings: Settings): Par
   }
 }
 
-// 끈 위젯과 생략된 위젯을 뺀 줄만 남기고, 위젯 사이에 구분자를 넣어 줄마다 budget 표시폭에 맞춘다.
-// budget을 주지 않으면 맞추지 않는다.
+// 끈 위젯과 생략된 위젯을 뺀 줄만 남기고, 위젯 사이에 구분자를 넣는다.
+// budget 표시폭을 넘는 배치 줄은 위젯 단위로 여러 줄로 넘긴다. budget을 주지 않으면 맞추지 않는다.
 export function buildLines(s: Snapshot, settings: Settings, budget = Infinity): Part[][] {
   const separator = SEPARATORS[settings.separator]
   const lines: Part[][] = []
@@ -94,8 +94,7 @@ export function buildLines(s: Snapshot, settings: Settings, budget = Infinity): 
       if (parts) widgets.push(parts)
     }
     if (widgets.length === 0) continue
-    const line = fitLine(widgets, separator, budget)
-    if (line.length > 0) lines.push(line)
+    lines.push(...wrapLine(widgets, separator, budget))
   }
   return lines
 }

@@ -60,40 +60,65 @@ function joinWidgets(widgets: readonly Part[][], separator: readonly Part[]): Pa
   return line
 }
 
-// Go 판 fitLineWidth와 같은 순서다 — 표시폭이 budget을 넘으면 오른쪽 위젯을 앞 구분자와 함께 하나씩 빼고,
-// 하나만 남아도 넘치면 표시폭 기준으로 자른다.
-export function fitLine(widgets: readonly Part[][], separator: readonly Part[], budget: number): Part[] {
-  let count = widgets.length
-  let line = joinWidgets(widgets, separator)
-  while (count > 1 && partsWidth(line) > budget) {
-    count--
-    line = joinWidgets(widgets.slice(0, count), separator)
+// 위젯을 왼쪽부터 채우다 구분자와 다음 위젯이 budget을 넘으면 그 위젯부터 다음 줄로 넘긴다.
+// 구분자는 같은 줄의 위젯 사이에만 들어가 넘어간 줄이 구분자로 시작하지 않는다.
+// 위젯 하나만으로 budget을 넘는 줄은 가운데를 줄인다 — 프로젝트 이름과 브랜치의 앞뒤가 다 보이게 하려는 것이다.
+export function wrapLine(widgets: readonly Part[][], separator: readonly Part[], budget: number): Part[][] {
+  if (budget <= 0) return []
+  const separatorWidth = partsWidth(separator)
+  const rows: Part[][][] = []
+  let row: Part[][] = []
+  let used = 0
+  for (const widget of widgets) {
+    const width = partsWidth(widget)
+    if (row.length > 0 && used + separatorWidth + width <= budget) {
+      row.push(widget)
+      used += separatorWidth + width
+      continue
+    }
+    if (row.length > 0) rows.push(row)
+    row = [widget]
+    used = width
   }
-  return partsWidth(line) <= budget ? line : truncateParts(line, budget)
+  if (row.length > 0) rows.push(row)
+  return rows.map((r) =>
+    r.length === 1 && partsWidth(r[0]!) > budget ? truncateMiddle(r[0]!, budget) : joinWidgets(r, separator),
+  )
 }
 
-// budget-1칸 안에 들어가는 앞부분만 남기고 …를 붙인다(Go 판 truncateToWidth).
-// 2칸 문자가 남은 칸에 다 들어가지 않으면 그 문자부터 버려 반으로 잘리지 않는다.
-// …는 잘린 조각의 색을 그대로 이어받는다 — Go 판에서 …가 그 자리의 색 코드 뒤에 붙던 것과 같다.
-function truncateParts(parts: readonly Part[], budget: number): Part[] {
-  if (budget <= 0) return []
+// budget-1칸을 앞(홀수면 1칸 더)과 뒤로 나눠 남기고 사이에 …를 넣는다.
+// 2칸 문자가 남은 칸에 다 들어가지 않으면 그 문자부터 버려 반으로 잘리지 않고, 앞에서 남은 칸은 뒤가 쓴다.
+// …는 앞부분이 끊긴 조각의 꾸밈을 이어받는다.
+function truncateMiddle(parts: readonly Part[], budget: number): Part[] {
   const room = budget - 1
+  const head = takeWidth(parts, Math.ceil(room / 2))
+  const reversed = parts.map(reverseText).reverse()
+  const tail = takeWidth(reversed, room - partsWidth(head.kept)).kept.map(reverseText).reverse()
+  const { text: _, ...style } = parts[head.cutIndex] ?? parts[parts.length - 1]!
+  return [...head.kept, { ...style, text: ELLIPSIS }, ...tail]
+}
+
+function reverseText(part: Part): Part {
+  return { ...part, text: [...part.text].reverse().join('') }
+}
+
+// 앞에서부터 room 표시폭 안에 들어가는 조각만 남긴다 — 빈 조각은 넣지 않는다.
+// cutIndex는 room이 찬 조각의 위치이고, 다 들어가면 parts.length다.
+function takeWidth(parts: readonly Part[], room: number): { kept: Part[]; cutIndex: number } {
   const kept: Part[] = []
   let used = 0
-  for (const part of parts) {
+  for (const [i, part] of parts.entries()) {
     let text = ''
     for (const ch of part.text) {
       const w = codePointWidth(ch.codePointAt(0)!)
       if (w > 0 && used + w > room) {
-        kept.push({ ...part, text: text + ELLIPSIS })
-        return kept
+        if (text) kept.push({ ...part, text })
+        return { kept, cutIndex: i }
       }
       text += ch
       used += w
     }
-    kept.push({ ...part, text })
+    if (text) kept.push({ ...part, text })
   }
-  // 줄 전체가 room 안에 들었다면 budget도 넘지 않았으므로 여기 오지 않는다
-  kept.push({ text: ELLIPSIS })
-  return kept
+  return { kept, cutIndex: parts.length }
 }
