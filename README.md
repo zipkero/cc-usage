@@ -3,7 +3,7 @@
 Claude Code 프롬프트 위 band에 프로젝트·모델·컨텍스트·비용·rate limit을 표시하는 Claude Code [mod](https://code.claude.com/docs/en/plugins/mods/overview)다.
 
 ```
-cc-usage (main) │ ◆ claude-opus-5-5 │ ██░░░░░░ 30% 60K │ $1.25 │ 5h: 7% (2h25m) │ 7d: 23% (4d 5h)
+cc-usage (main) │ ◆ claude-opus-5-5 │ ██░░░░░░ 30% 60K │ $1.25 │ 5h: 7% (2h 25m) │ 7d: 23% (4d 5h)
 ```
 
 > 이 브랜치는 marketplace 배포용이다. 소스는 [`main`](https://github.com/zipkero/cc-usage/tree/main) 브랜치에 있다.
