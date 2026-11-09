@@ -3,7 +3,7 @@
 Claude Code 프롬프트 위 band에 프로젝트·모델·컨텍스트·비용·rate limit을 표시하는 Claude Code [mod](https://code.claude.com/docs/en/plugins/mods/overview)다.
 
 ```
-cc-usage (main) │ ◆ claude-opus-5-5 │ ██░░░░░░ 30% 60K │ $1.25 │ 5h: 7% (2h25m) │ 7d: 23% (4d 5h)
+cc-usage (main) │ ◆ claude-opus-5-5 │ ██░░░░░░ 30% 60K │ $1.25 │ 5h: 7% (2h 25m) │ 7d: 23% (4d 5h)
 ```
 
 > Go로 만든 이전 status line 버전(v0.5.x)은 [`deprecated-go`](https://github.com/zipkero/cc-usage/tree/deprecated-go) 브랜치에 보존돼 있으며 더 이상 갱신하지 않는다.

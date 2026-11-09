@@ -47,9 +47,9 @@ describe('formatTimeRemaining', () => {
     [DAY + 2 * HOUR, '1d 2h', '1일 2시간'],
     [DAY + 2 * HOUR + 59 * MIN, '1d 2h', '1일 2시간'],
     [DAY, '1d 0h', '1일 0시간'],
-    [DAY - MIN, '23h59m', '23시간59분'],
-    [3 * HOUR + 4 * MIN, '3h4m', '3시간4분'],
-    [HOUR, '1h0m', '1시간0분'],
+    [DAY - MIN, '23h 59m', '23시간 59분'],
+    [3 * HOUR + 4 * MIN, '3h 4m', '3시간 4분'],
+    [HOUR, '1h 0m', '1시간 0분'],
     [HOUR - 1, '59m', '59분'],
     [5 * MIN, '5m', '5분'],
     [5 * MIN + 59_999, '5m', '5분'],
@@ -117,10 +117,10 @@ describe('rate limit 위젯 언어', () => {
     buildLines(snap(lang), resolveSettings({ layout: 'R7L' })).map((line) => line.map((p) => p.text).join(''))
 
   test('ko는 라벨이 5시간·7일이고 남은 시간이 한국어 단위다', () => {
-    expect(lineText('ko')).toEqual(['5시간: 12% (3시간4분) │ 7일: 34% (1일 2시간) │ spend: 56%'])
+    expect(lineText('ko')).toEqual(['5시간: 12% (3시간 4분) │ 7일: 34% (1일 2시간) │ spend: 56%'])
   })
 
   test('en은 라벨이 5h·7d이고 남은 시간이 d·h·m 단위다', () => {
-    expect(lineText('en')).toEqual(['5h: 12% (3h4m) │ 7d: 34% (1d 2h) │ spend: 56%'])
+    expect(lineText('en')).toEqual(['5h: 12% (3h 4m) │ 7d: 34% (1d 2h) │ spend: 56%'])
   })
 })

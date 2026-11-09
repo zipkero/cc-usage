@@ -146,7 +146,7 @@ describe('위젯 색', () => {
       expect(renderWidget('rateLimit5h', s, st)).toEqual([
         { text: '5h: ', ...styled(theme, 'secondary') },
         { text: '12%', ...styled(theme, 'safe') },
-        { text: ' (3h4m)', dimColor: true },
+        { text: ' (3h 4m)', dimColor: true },
       ])
       // 구분자는 기호만 Dim이다
       const [line] = buildLines(s, resolveSettings({ theme, layout: 'M$' }))

@@ -492,8 +492,8 @@ const RESET_USAGE: SessionUsage = {
   ],
 }
 
-const EN_ROW = '5h: 12% (3h4m) │ 7d: 34% (1d 2h) │ spend: 56% (5m)'
-const KO_ROW = '5시간: 12% (3시간4분) │ 7일: 34% (1일 2시간) │ spend: 56% (5분)'
+const EN_ROW = '5h: 12% (3h 4m) │ 7d: 34% (1d 2h) │ spend: 56% (5m)'
+const KO_ROW = '5시간: 12% (3시간 4분) │ 7일: 34% (1일 2시간) │ spend: 56% (5분)'
 
 const LANGUAGE_CASES: [string, PluginOptions, Record<string, string>, string][] = [
   ['language ko', { language: 'ko' }, {}, KO_ROW],
@@ -521,17 +521,17 @@ test('남은 시간은 mock clock 기준이고 1분 미만이나 지난 리셋�
   const ui = await mountBand($)
   // 30초 tick이 다시 그린다 — spend 리셋 30초 전이라 1분 미만으로 생략된다
   await calls.clock.advance(4 * MIN + 30_000)
-  expect(rows(await ui.drawn())).toEqual(['5시간: 12% (2시간59분) │ 7일: 34% (1일 1시간) │ spend: 56%'])
+  expect(rows(await ui.drawn())).toEqual(['5시간: 12% (2시간 59분) │ 7일: 34% (1일 1시간) │ spend: 56%'])
   // 5h 리셋 시각이 지났다
   await calls.clock.advance(3 * HOUR)
-  expect(rows(await ui.drawn())).toEqual(['5시간: 12% │ 7일: 34% (22시간55분) │ spend: 56%'])
+  expect(rows(await ui.drawn())).toEqual(['5시간: 12% │ 7일: 34% (22시간 55분) │ spend: 56%'])
 })
 
 test('남은 시간 괄호는 dimColor이고 라벨은 secondary 색이다', { options: { language: 'ko', layout: 'R' } }, async ($, on) => {
   stubSession(on, { usage: RESET_USAGE })
   const ui = await mountBand($)
   expect(await styleOf(ui, '5시간: ')).toEqual({ color: THEMES.default.secondary.color, bold: undefined, dimColor: undefined })
-  expect(await styleOf(ui, ' (3시간4분)')).toEqual({ color: undefined, bold: undefined, dimColor: true })
+  expect(await styleOf(ui, ' (3시간 4분)')).toEqual({ color: undefined, bold: undefined, dimColor: true })
 })
 
 // 컨텍스트 막대 폭 (SPEC §5.7): 화면에서도 막대가 설정 폭으로 그려진다
