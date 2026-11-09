@@ -35,7 +35,8 @@ export function resolveLanguage(option: LanguageOption, locales: (string | undef
   return option === 'auto' ? detectLanguage(locales) : option
 }
 
-// format.go의 formatTimeRemaining과 같은 규칙 — 1분 미만이나 지난 시각은 빈 문자열이라 생략된다
+// format.go의 formatTimeRemaining 규칙에서 시간·분 사이에도 일·시간처럼 공백을 넣었다(3h 4m).
+// 1분 미만이나 지난 시각은 빈 문자열이라 생략된다
 export function formatTimeRemaining(ms: number, lang: Language): string {
   const total = Math.floor(ms / 60_000)
   if (!(total > 0)) return ''
@@ -44,6 +45,6 @@ export function formatTimeRemaining(ms: number, lang: Language): string {
   const hours = Math.floor((total % (60 * 24)) / 60)
   const minutes = total % 60
   if (days > 0) return days + t.days + ' ' + hours + t.hours
-  if (hours > 0) return hours + t.hours + minutes + t.minutes
+  if (hours > 0) return hours + t.hours + ' ' + minutes + t.minutes
   return minutes + t.minutes
 }
